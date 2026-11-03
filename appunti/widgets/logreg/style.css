@@ -1,0 +1,15 @@
+.w-logreg .lr-sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.2rem 1.2rem; }
+@media (max-width: 720px) { .w-logreg .lr-sliders { grid-template-columns: minmax(0, 1fr); } }
+.w-logreg .sl { grid-template-columns: 2rem 1fr 2.6rem; row-gap: 0; }
+.w-logreg .lr-feat { grid-column: 1 / -1; font-size: 0.72rem; color: var(--ink-soft); margin-top: -0.3rem; margin-bottom: 0.2rem; }
+.w-logreg .lr-axis { stroke: var(--ink-soft); stroke-width: 1; }
+.w-logreg .lr-half { stroke: var(--rule); stroke-dasharray: 4 4; }
+.w-logreg .lr-tick { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-soft); text-anchor: middle; }
+.w-logreg .lr-tick.end { text-anchor: end; }
+.w-logreg .lr-tick.mid { dominant-baseline: central; }
+.w-logreg .lr-curve { fill: none; stroke: var(--accent-soft); stroke-width: 2.5; }
+.w-logreg .lr-guide { stroke: var(--fig); stroke-width: 1; stroke-dasharray: 3 3; }
+.w-logreg .lr-dot { fill: var(--lemma); stroke: var(--surface); stroke-width: 2; transition: cx calc(0.3s / var(--speed, 1)), cy calc(0.3s / var(--speed, 1)); }
+.w-logreg .lr-dot.neg { fill: var(--hot); }
+.w-logreg .lr-dotlab { font-family: var(--font-mono); font-size: 12px; fill: var(--ink); }
+.w-logreg .lr-dotlab.end { text-anchor: end; }

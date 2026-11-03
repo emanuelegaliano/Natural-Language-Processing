@@ -1,0 +1,21 @@
+.w-regex .rx-pattern { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.4rem; }
+.w-regex .rx-label { font-family: var(--font-sans); font-size: 0.8rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+.w-regex .rx-pattern code { font-family: var(--font-mono); font-size: 1.05rem; color: var(--accent); }
+.w-regex .rx-text {
+  font-family: var(--font-mono); font-size: 1.05rem; line-height: 2.1; margin: 0.2rem 0 0.6rem;
+  padding: 0.5rem 0.8rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; white-space: pre-wrap;
+}
+.w-regex mark { color: var(--ink); padding: 0.12rem 0; border-radius: 2px; transition: background calc(0.3s / var(--speed, 1)); }
+.w-regex mark.tp { background: color-mix(in oklab, var(--lemma) 32%, transparent); box-shadow: inset 0 0 0 1px var(--lemma); }
+.w-regex mark.fp { background: color-mix(in oklab, var(--hot) 25%, transparent); box-shadow: inset 0 0 0 1px var(--hot); }
+.w-regex mark.fn { background: transparent; outline: 2px dashed var(--hot); outline-offset: -1px; }
+.w-regex .rx-stats { display: flex; flex-wrap: wrap; gap: 1rem; font-family: var(--font-sans); font-size: 0.9rem; color: var(--ink-soft); }
+.w-regex .rx-stat b { font-family: var(--font-mono); color: var(--ink); }
+.w-regex .rx-stat.tp b { color: var(--lemma); }
+.w-regex .rx-stat.fp b, .w-regex .rx-stat.fn b { color: var(--hot); }
+.w-regex .rx-custom { display: flex; align-items: center; gap: 0.6rem; margin: 0.6rem 0; }
+.w-regex .rx-input {
+  flex: 1; font-family: var(--font-mono); font-size: 0.95rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 0.3rem 0.5rem;
+}
+.w-regex .rx-input:focus { outline: 2px solid var(--accent-soft); outline-offset: 1px; }

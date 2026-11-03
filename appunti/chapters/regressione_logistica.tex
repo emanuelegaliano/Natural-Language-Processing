@@ -1,0 +1,395 @@
+\chapter{Regressione logistica}\label{ch:lr}
+La \textbf{regressione logistica} è uno strumento di analisi molto usato nelle scienze naturali e sociali, ed è la baseline del machine learning supervisionato per la classificazione. È anche la base delle reti neurali: come vedremo più avanti nel corso, una rete neurale si può vedere come una serie di classificatori logistici messi uno sopra l'altro. Il capitolo segue il capitolo 4 di \cite{jurafsky2026slp}. Vediamo come si classifica un testo con la regressione logistica, come si addestra il modello con la cross-entropy loss e la discesa del gradiente, e come si estende il modello a più di due classi.
+
+\section{Classificatori generativi e discriminativi}
+Naive Bayes (capitolo~\ref{ch:nb}) è un classificatore \textbf{generativo}, mentre la regressione logistica è un classificatore \textbf{discriminativo}. Per capire la differenza, supponiamo di voler distinguere le immagini di gatti da quelle di cani:
+\begin{itemize}
+    \item un \textbf{classificatore generativo} costruisce un modello di cosa c'è nell'immagine di un gatto: conosce i baffi, le orecchie, gli occhi, e assegna a qualsiasi immagine una probabilità (\enquote{quanto è gattosa questa immagine?}). Costruisce poi un modello analogo per i cani, e data una nuova immagine esegue entrambi i modelli e guarda quale si adatta meglio;
+    \item un \textbf{classificatore discriminativo} cerca solo di distinguere i cani dai gatti. Se si accorge che i cani hanno il collare, può ignorare tutto il resto.
+\end{itemize}
+Formalmente, per trovare la classe $c$ di un documento $d$, Naive Bayes passa per la likelihood e il prior:
+\[
+\hat{c} = \argmax_{c \in C} \overbrace{P(d \mid c)}^{\text{likelihood}}\, \overbrace{P(c)}^{\text{prior}}.
+\]
+La regressione logistica calcola invece direttamente $P(c \mid d)$. Impara quindi ad assegnare pesi alti alle feature che aiutano a distinguere le classi, anche se non sarebbe in grado di generare un esempio di nessuna delle due.
+
+\section{Machine learning supervisionato}\label{sec:ml}
+Ricordiamo le basi del machine learning supervisionato. L'obiettivo è trovare la funzione $f$ che predice meglio $y = f(x)$ dato un input $x$. Per trovarla abbiamo a disposizione un insieme di campioni noti $\{(x^{(1)}, y^{(1)}), (x^{(2)}, y^{(2)}), \dots, (x^{(n)}, y^{(n)})\}$, e scegliamo, in un insieme di funzioni possibili $\mathcal{F}$, quella che minimizza l'errore medio:
+\begin{equation}
+f = \argmin_{f' \in \mathcal{F}} \frac{1}{n} \sum_{i=1}^{n} \mathcal{L}\big(f'(x^{(i)}), y^{(i)}\big)
+\end{equation}
+dove la funzione di loss $\mathcal{L}$ quantifica la divergenza tra il dato vero e la predizione.
+
+La scelta di $\mathcal{F}$ è delicata. Se $\mathcal{F}$ è troppo ampio, trovare la $f$ migliore può essere impossibile in pratica, e la $f$ migliore sul training set potrebbe non generalizzare bene su altri dati (\textbf{overfitting}). Se $\mathcal{F}$ è troppo ristretto, invece, la $f$ migliore potrebbe non approssimare bene nemmeno il training set. In generale vogliamo scegliere $\mathcal{F}$ in modo che il problema di ottimizzazione sia trattabile, e poi restringerlo ulteriormente guardando quanto bene i risultati generalizzano su altri dati (\textbf{tuning}).
+
+\paragraph{Un esempio.} Vogliamo predire lo stipendio annuo in euro di una persona a partire dai suoi anni di esperienza. Restringiamo lo spazio delle funzioni a quelle lineari, $\mathcal{F} = \{f \mid f(x) = a + b \cdot x,\ a, b \in \mathbb{R}\}$, e usiamo come loss il valore assoluto dell'errore, $\mathcal{L}(y, \hat{y}) = |y - \hat{y}|$:
+\begin{equation}
+f = \argmin_{f' \in \mathcal{F}} \frac{1}{n} \sum_{i=1}^{n} \big|f'(x^{(i)}) - y^{(i)}\big|.
+\end{equation}
+Restringerci alle funzioni lineari può essere limitante, ma rende il training molto semplice: è una regressione lineare (figura~\ref{fig:stipendio}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, font=\small, x=0.42cm, y=0.05cm]
+  \draw[->, TextGray] (0,0) -- (21,0) node[below left] {anni di esperienza};
+  \draw[->, TextGray] (0,0) -- (0,75) node[above, align=center] {stipendio annuo (migliaia di euro)};
+  \foreach \x in {0,5,...,20} \node[lab, below] at (\x,0) {\x};
+  \foreach \y in {20,40,60} \node[lab, left] at (0,\y) {\y};
+  \foreach \x/\y in {1/24, 2/27, 3/26, 4/33, 5/31, 6/36, 8/38, 9/44, 10/41, 12/49, 13/47, 15/55, 16/52, 18/61, 19/58}
+    \fill[Accent] (\x,\y) circle (2pt);
+  \draw[thick, FigColor] (0,22) -- (20,64) node[right, font=\small] {$f(x) = a + b \cdot x$};
+\end{tikzpicture}
+\caption{Predire lo stipendio dagli anni di esperienza: lo spazio delle funzioni è ristretto alle rette $f(x) = a + bx$, e il training cerca i parametri $a$ e $b$ che minimizzano l'errore medio sui campioni.}
+\label{fig:stipendio}
+\end{figure}
+
+\paragraph{I parametri.} Nell'esempio, $\mathcal{F}$ dipende da due \textbf{parametri}, $a$ e $b$. Indichiamo con $\boldsymbol{\theta}$ l'insieme (di solito un vettore) di tutti i parametri di un modello, per cui $\mathcal{F} = \{f_{\boldsymbol{\theta}} \mid f_{\boldsymbol{\theta}}(x) = \theta_0 + \theta_1 \cdot x,\ \theta_0, \theta_1 \in \mathbb{R}\}$, e la nostra funzione è $f_{\boldsymbol{\theta}}$, dove $\boldsymbol{\theta}$ è il vettore che minimizza:
+\begin{equation}
+\boldsymbol{\theta} = \argmin_{\boldsymbol{\theta}' \in \mathbb{R}^2} \frac{1}{n} \sum_{i=1}^{n} \mathcal{L}\big(f_{\boldsymbol{\theta}'}(x^{(i)}), y^{(i)}\big).
+\end{equation}
+In generale preferiamo funzioni che si possano esprimere in forma analitica in funzione di alcuni parametri, e che siano \textbf{differenziabili}: in questo modo possiamo calcolarne il gradiente e ottimizzarle con metodi numerici, come la discesa del gradiente stocastica. La buona notizia è che sommando e componendo funzioni differenziabili si ottengono ancora funzioni differenziabili, per cui possiamo combinarne quante ne vogliamo. A volte si scelgono funzioni con ulteriori proprietà, ad esempio convesse.
+
+\paragraph{Training, validation e test.} Come abbiamo già visto, un modello si costruisce in tre fasi. Si addestra su un \textbf{training set}, di solito grande (ad esempio \enquote{I'm happy} $\to$ Positive, \enquote{This is really bad} $\to$ Negative, \enquote{I don't like it} $\to$ Negative). Si regolano gli iperparametri sul \textbf{validation set} (o development set, o held-out set), come \enquote{This is good} $\to$ Positive o \enquote{What a shame} $\to$ Negative. Infine si misurano le prestazioni sul \textbf{test set}.
+
+\paragraph{Classificazione.} In un problema di classificazione il modello restituisce una \textbf{distribuzione di probabilità sulle classi}: ogni probabilità è compresa tra 0 e 1, e la somma delle probabilità di tutte le classi è 1. Ad esempio, data una frase, il modello restituisce la probabilità di Positivo, Negativo e Neutro. Perché una distribuzione di probabilità invece della sola classe finale? Perché in questo modo possiamo rendere $f$ differenziabile.
+
+\subsection{Le componenti di un classificatore probabilistico}
+Dati $m$ esempi di input e output $(x^{(i)}, y^{(i)})$, un classificatore probabilistico ha quattro componenti:
+\begin{enumerate}
+    \item una \textbf{rappresentazione dell'input} tramite feature: per ogni osservazione $x^{(i)}$, un vettore di feature $[x_1, x_2, \dots, x_n]$, dove la feature $j$ dell'input $x^{(i)}$ si indica con $x_j$, con $x_j^{(i)}$ o a volte con $f_j(x^{(i)})$;
+    \item una \textbf{funzione di classificazione} che calcola $p(c \mid x)$, la stima della classe, ad esempio con la sigmoide o con il softmax;
+    \item una \textbf{funzione di loss} $\mathcal{L}$, ad esempio la cross-entropy loss;
+    \item un \textbf{algoritmo per ottimizzare} la funzione obiettivo, ad esempio la discesa del gradiente stocastica.
+\end{enumerate}
+La regressione logistica ha quindi due fasi. Nel \textbf{training} impariamo i pesi $\mathbf{w}$ e il bias $b$ con la discesa del gradiente stocastica e la cross-entropy loss. Nel \textbf{test}, dato un esempio $x$, calcoliamo $p(y \mid x)$ con i pesi appresi e restituiamo l'etichetta ($y = 1$ o $y = 0$) con la probabilità più alta.
+
+\section{Classificazione con la regressione logistica}
+Torniamo alla classificazione del testo: abbiamo un documento $x$ e un insieme fissato di classi $C = \{c_1, \dots, c_J\}$, e vogliamo predire una classe $\hat{y} \in C$. Nella \textbf{classificazione binaria}, data una serie di coppie di input e output $(x^{(i)}, y^{(i)})$, rappresentiamo ogni osservazione $x^{(i)}$ con un vettore di feature $[x_1, x_2, \dots, x_n]$, e calcoliamo come output una classe predetta $\hat{y}^{(i)} \in \{0, 1\}$.
+
+Per ogni feature $x_i$, il \textbf{peso} $w_i$ dice quanto è importante quella feature. Ad esempio:
+\begin{itemize}
+    \item $x_i$ = \enquote{la recensione contiene \textit{awesome}}: $w_i = +10$;
+    \item $x_j$ = \enquote{la recensione contiene \textit{abysmal}}: $w_j = -10$;
+    \item $x_k$ = \enquote{la recensione contiene \textit{mediocre}}: $w_k = -2$.
+\end{itemize}
+Per un'osservazione $\mathbf{x} = [x_1, \dots, x_n]$ abbiamo quindi un peso per ogni feature, $\mathbf{w} = [w_1, \dots, w_n]$ (a volte i pesi si indicano con $\boldsymbol{\theta} = [\theta_1, \dots, \theta_n]$), più un \textbf{bias} $b$. Per classificare sommiamo le feature pesate e il bias:
+\begin{equation}
+z = \left(\sum_{i=1}^{n} w_i x_i\right) + b = \mathbf{w} \cdot \mathbf{x} + b
+\end{equation}
+e se la somma è alta diciamo $y = 1$, se è bassa $y = 0$.
+
+\subsection{La sigmoide}
+Vogliamo però un classificatore probabilistico, che come Naive Bayes ci dia una probabilità: un modello che sappia dirci $p(y = 1 \mid x; \boldsymbol{\theta})$ e $p(y = 0 \mid x; \boldsymbol{\theta})$. Il problema è che $z$ non è una probabilità, è solo un numero, e può andare da $-\infty$ a $+\infty$. La soluzione è passare $z$ in una funzione che vada da 0 a 1, la \textbf{sigmoide} (o funzione logistica, da cui il nome del modello):
+\begin{equation}
+y = \sigma(z) = \frac{1}{1 + e^{-z}} = \frac{1}{1 + \exp(-z)}.
+\end{equation}
+La sigmoide è quasi lineare intorno a 0 e si appiattisce agli estremi, per cui tende a schiacciare i valori anomali verso 0 o 1, ed è differenziabile, il che sarà comodo per l'addestramento. Ha inoltre due proprietà che useremo:
+\begin{equation}
+\sigma(-z) = 1 - \sigma(z) = \frac{e^{-z}}{1 + e^{-z}}, \qquad \sigma'(z) = \sigma(z)\,\big(1 - \sigma(z)\big)
+\end{equation}
+dove la prima segue dalla definizione (e dalla forma \enquote{simmetrica} della curva), la seconda dalle proprietà delle derivate\footnote{Nel libro $z$ viene chiamato \textbf{logit}, perché la funzione logit è l'inversa della sigmoide: $\logit(p) = \sigma^{-1}(p) = \ln \frac{p}{1 - p}$, ovvero il logaritmo degli odds. Chiamare $z$ logit ricorda che lo stiamo interpretando come un log odds.}.
+
+L'idea della regressione logistica è quindi calcolare $\mathbf{w} \cdot \mathbf{x} + b$, passarlo nella sigmoide e trattare il risultato come una probabilità. Per avere una distribuzione basta assicurarsi che le due probabilità sommino a 1:
+\begin{align}
+P(y = 1) &= \sigma(\mathbf{w} \cdot \mathbf{x} + b) = \frac{1}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)} \\
+P(y = 0) &= 1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b) = 1 - \frac{1}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)} = \frac{\exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}.
+\end{align}
+
+\paragraph{Da probabilità a classificatore.} Per decidere la classe di un'osservazione di test usiamo la soglia $0.5$, detta \textbf{decision boundary}:
+\begin{equation}
+\hat{y} = \begin{cases} 1 & \text{se } P(y = 1 \mid x) > 0.5 \\ 0 & \text{altrimenti} \end{cases}
+\end{equation}
+Dato che $\sigma(0) = 0.5$, la condizione equivale a $\mathbf{w} \cdot \mathbf{x} + b > 0$, e la classe è 0 se $\mathbf{w} \cdot \mathbf{x} + b \leq 0$.
+
+\subsection{Un esempio di sentiment analysis}
+Vogliamo classificare la sentiment della seguente recensione:
+\begin{quote}
+\textit{It's hokey. There are virtually no surprises, and the writing is second-rate. So why was it so enjoyable? For one thing, the cast is great. Another nice touch is the music. I was overcome with the urge to get off the couch and start dancing. It sucked me in, and it'll do the same to you.}
+\end{quote}
+Rappresentiamo la recensione con sei feature:
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Var & Definizione & Valore \\
+\midrule
+$x_1$ & numero di parole del lessico positivo nel documento & 3 \\
+$x_2$ & numero di parole del lessico negativo nel documento & 2 \\
+$x_3$ & 1 se \enquote{no} compare nel documento, 0 altrimenti & 1 \\
+$x_4$ & numero di pronomi di prima e seconda persona & 3 \\
+$x_5$ & 1 se \enquote{!} compare nel documento, 0 altrimenti & 0 \\
+$x_6$ & logaritmo del numero di parole del documento & $\ln(66) = 4.19$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Le parole del lessico positivo sono \textit{enjoyable}, \textit{great} e \textit{nice}, quelle del lessico negativo \textit{hokey} e \textit{second-rate}, e i pronomi sono \textit{I}, \textit{me} e \textit{you}. Supponiamo di aver già imparato i pesi $\mathbf{w} = [2.5, -5.0, -1.2, 0.5, 2.0, 0.7]$ e il bias $b = 0.1$. Il peso $w_1 = 2.5$ è positivo, mentre $w_2 = -5.0$ è negativo e circa doppio in valore assoluto: le parole negative sono associate negativamente alla sentiment positiva, e contano circa il doppio di quelle positive. La probabilità che la recensione sia positiva è:
+\begin{align}
+p(+ \mid x) = P(y = 1 \mid x) &= \sigma(\mathbf{w} \cdot \mathbf{x} + b) \nonumber \\
+&= \sigma\big([2.5, -5.0, -1.2, 0.5, 2.0, 0.7] \cdot [3, 2, 1, 3, 0, 4.19] + 0.1\big) \nonumber \\
+&= \sigma(0.833) = 0.70
+\end{align}
+e quindi $p(- \mid x) = 1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b) = 0.30$: la recensione viene classificata come positiva (figura~\ref{fig:sigmoide}).
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{logreg}
+\begin{tikzpicture}[nlp, font=\small, x=0.6cm, y=4cm]
+  \draw[->, TextGray] (-8.3,0) -- (8.5,0) node[below] {$z$};
+  \draw[->, TextGray] (0,0) -- (0,1.12) node[left] {$\sigma(z)$};
+  \foreach \z in {-8,-6,...,8} \node[lab, below] at (\z,0) {\z};
+  \foreach \p in {0.5,1} \node[lab, left] at (0,\p) {\p};
+  \draw[RuleGray, dashed] (-8,0.5) -- (8,0.5) node[lab, below left] {decision boundary};
+  \draw[very thick, Accent!80, domain=-8:8, samples=120] plot (\x, {1/(1+exp(-\x))});
+  \draw[FigColor, dashed] (0.833,0) -- (0.833,0.697) -- (0,0.697);
+  \fill[LemmaColor] (0.833,0.697) circle (3pt);
+  \node[anchor=west, font=\small] at (1.1,0.62) {$\sigma(0.833) = 0.70$};
+  \node[anchor=west, align=left, font=\scriptsize] at (-8,0.95) {$z = \mathbf{w}\cdot\mathbf{x} + b = 0.833$\\$P(+ \mid x) = 0.70$, \ $\hat y = 1$};
+\end{tikzpicture}
+\end{widget}
+\caption{La sigmoide $\sigma(z) = 1/(1 + e^{-z})$ e il punto corrispondente alla recensione dell'esempio: $z = 0.833$ è positivo, quindi $\sigma(z) = 0.70$ supera la decision boundary e la recensione è classificata come positiva.}
+\label{fig:sigmoide}
+\end{figure}
+
+\paragraph{Feature per altri task.} Possiamo costruire feature per la regressione logistica per qualsiasi task di classificazione. Nella \textbf{period disambiguation}, ad esempio, vogliamo decidere se un punto indica la fine di una frase (\enquote{This ends in a period.}) o no (\enquote{The house at 465 Main St. is new.}). Alcune feature possibili sono:
+\begin{align*}
+x_1 &= \begin{cases} 1 & \text{se } \mathit{Case}(w_i) = \text{Lower} \\ 0 & \text{altrimenti} \end{cases} \qquad
+x_2 = \begin{cases} 1 & \text{se } w_i \in \text{AcronymDict} \\ 0 & \text{altrimenti} \end{cases} \\[4pt]
+x_3 &= \begin{cases} 1 & \text{se } w_i = \text{St.} \wedge \mathit{Case}(w_{i-1}) = \text{Cap} \\ 0 & \text{altrimenti} \end{cases}
+\end{align*}
+dove l'ultima combina due proprietà: un punto dopo \textit{St.} preceduto da una parola maiuscola indica probabilmente l'abbreviazione di \textit{street}, e non la fine della frase.
+
+Ricapitolando, nella regressione logistica binaria abbiamo un insieme di classi (sentiment positiva o negativa) e un vettore di feature $\mathbf{x} = [x_1, \dots, x_n]$, ad esempio $x_1 = \text{count}(\text{awesome})$ e $x_2 = \log(\text{numero di parole})$. Abbiamo poi un vettore di pesi $\mathbf{w} = [w_1, \dots, w_n]$, con un peso $w_i$ per ogni feature, e un bias $b$. Con questi stimiamo $P(y = 1 \mid x) = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$.
+
+\section{La cross-entropy loss}
+Da dove vengono i pesi? Siamo nel caso supervisionato: per ogni $x$ conosciamo l'etichetta corretta $y$ (0 o 1), mentre il sistema produce una stima $\hat{y}$. Vogliamo scegliere $\mathbf{w}$ e $b$ in modo da minimizzare la distanza tra la stima $\hat{y}^{(i)}$ e il valore vero $y^{(i)}$. Ci servono due cose:
+\begin{itemize}
+    \item una misura di distanza, ovvero una \textbf{funzione di loss} (o funzione di costo): la \textbf{cross-entropy loss};
+    \item un \textbf{algoritmo di ottimizzazione} che aggiorni $\mathbf{w}$ e $b$ per minimizzare la loss: la \textbf{discesa del gradiente stocastica}.
+\end{itemize}
+Vogliamo quindi sapere quanto l'output del classificatore, $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$, è lontano dall'output vero $y$, e chiamiamo questa differenza $L(\hat{y}, y)$.
+
+\paragraph{L'intuizione.} La cross-entropy loss è detta anche \textbf{negative log likelihood loss}, ed è un caso di \textbf{stima di massima verosimiglianza condizionale}: scegliamo i parametri $\mathbf{w}$ e $b$ che massimizzano il logaritmo della probabilità delle etichette vere $y$ nel training set, date le osservazioni $x$.
+
+\paragraph{La derivazione per una singola osservazione.} L'obiettivo è massimizzare la probabilità dell'etichetta corretta, $p(y \mid x)$. Dato che gli esiti possibili sono solo due (0 o 1), possiamo scrivere la probabilità prodotta dal classificatore come:
+\begin{equation}
+p(y \mid x) = \hat{y}^{\,y}\, (1 - \hat{y})^{1 - y}
+\end{equation}
+che per $y = 1$ diventa $\hat{y}$, e per $y = 0$ diventa $1 - \hat{y}$. Prendiamo il logaritmo di entrambi i membri, che è comodo matematicamente e non cambia niente, perché i valori che massimizzano $\log p(y \mid x)$ massimizzano anche $p(y \mid x)$:
+\begin{equation}
+\log p(y \mid x) = \log\left[\hat{y}^{\,y}\, (1 - \hat{y})^{1 - y}\right] = y \log \hat{y} + (1 - y) \log(1 - \hat{y}).
+\end{equation}
+Infine cambiamo segno, per trasformare la quantità da massimizzare in una loss da minimizzare. Il risultato è la \textbf{cross-entropy loss} (si chiama così perché è la formula della cross-entropy tra $y$ e $\hat{y}$):
+\begin{equation}
+L_{CE}(\hat{y}, y) = -\log p(y \mid x) = -\big[y \log \hat{y} + (1 - y) \log(1 - \hat{y})\big]
+\end{equation}
+e sostituendo la definizione di $\hat{y}$:
+\begin{equation}\label{eq:ce}
+L_{CE}(\hat{y}, y) = -\big[y \log \sigma(\mathbf{w} \cdot \mathbf{x} + b) + (1 - y) \log\big(1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b)\big)\big].
+\end{equation}
+
+\paragraph{Funziona?} Torniamo all'esempio della recensione. Vogliamo che la loss sia più piccola se la stima del modello è vicina a quella corretta, e più grande se il modello si confonde.
+
+Supponiamo prima che l'etichetta vera sia $y = 1$ (recensione positiva): il modello se la cava bene, perché le ha assegnato $0.70$. La loss è:
+\[
+L_{CE}(\hat{y}, y) = -\big[\log \sigma(\mathbf{w} \cdot \mathbf{x} + b)\big] = -\log(0.70) = 0.36.
+\]
+Se invece l'etichetta vera fosse $y = 0$ (magari la recensione continuava con \enquote{But bottom line, the movie is terrible! I beg you not to see it!}), il modello si sarebbe confuso, e la loss è:
+\[
+L_{CE}(\hat{y}, y) = -\big[\log\big(1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b)\big)\big] = -\log(0.30) = 1.2.
+\]
+La loss è quindi più grande quando il modello sbaglia, come volevamo. In generale $-\log$ va da 0 (il logaritmo di 1, nessuna perdita) a infinito (il logaritmo di 0), e dato che le due probabilità sommano a 1, ogni aumento della probabilità della risposta corretta avviene a spese di quella sbagliata.
+
+\section{Discesa del gradiente}
+Rendiamo esplicito che la loss dipende dai parametri $\boldsymbol{\theta} = (w_1, w_2, \dots, w_n, b)$, e scriviamo $\hat{y}$ come $f(x; \boldsymbol{\theta})$. Vogliamo i pesi che minimizzano la loss media su tutti gli esempi:
+\begin{equation}
+\hat{\boldsymbol{\theta}} = \argmin_{\boldsymbol{\theta}} \frac{1}{m} \sum_{i=1}^{m} L_{CE}\big(f(x^{(i)}; \boldsymbol{\theta}), y^{(i)}\big).
+\end{equation}
+L'intuizione della \textbf{discesa del gradiente} è questa: come arriviamo in fondo a un canyon, dove scorre il fiume? Ci guardiamo intorno a 360 gradi, troviamo la direzione in cui il terreno scende più ripido, e andiamo da quella parte. Per la regressione logistica la loss è \textbf{convessa}: una funzione convessa ha un solo minimo, e la discesa del gradiente, da qualunque punto parta, è garantita trovarlo\footnote{La loss delle reti neurali, invece, non è convessa.}.
+
+\paragraph{Un solo parametro.} Visualizziamo prima il caso di un singolo parametro scalare $w$. Dato il valore corrente $w_1$, dobbiamo farlo diventare più grande o più piccolo? La risposta è spostarsi nel verso opposto alla pendenza della funzione: se la pendenza della loss in $w_1$ è negativa, ci spostiamo verso destra (figura~\ref{fig:gd}). Più in generale, il \textbf{gradiente} di una funzione di più variabili è un vettore che punta nella direzione di massima crescita della funzione. La discesa del gradiente calcola il gradiente della loss nel punto corrente e si sposta nella direzione \textbf{opposta}.
+
+Di quanto ci spostiamo? Del valore del gradiente (la pendenza, nel nostro esempio a una variabile), $\frac{d}{dw} L(f(x; w), y)$, pesato da un \textbf{learning rate} $\eta$:
+\begin{equation}
+w_{t+1} = w_t - \eta\, \frac{d}{dw} L\big(f(x; w), y\big)
+\end{equation}
+dove un learning rate più alto vuol dire spostare $w$ più velocemente.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{gradient-descent}
+\begin{tikzpicture}[nlp, font=\small, x=1.6cm, y=1.1cm]
+  \draw[->, TextGray] (-3.2,0) -- (3.3,0) node[below] {$w$};
+  \draw[->, TextGray] (-3.2,0) -- (-3.2,4.3) node[left] {loss};
+  \foreach \w in {-3,-2,...,3} \node[lab, below] at (\w,0) {\w};
+  \draw[very thick, Accent!80, domain=-3:3, samples=120] plot (\x,
+    {(2*ln(1+exp(-\x)) + 2*ln(1+exp(-2*\x)) + ln(1+exp(-3*\x)) + ln(1+exp(2*\x)) + ln(1+exp(\x)))/7});
+  % tangente in w_0 = -1.5: L = 2.037, pendenza -1.162
+  \draw[ObsColor, thick] (-2.1,2.037+1.162*0.6) -- (-0.9,2.037-1.162*0.6);
+  \node[ObsColor, anchor=south west, font=\scriptsize] at (-1.45,2.2) {pendenza negativa in $w_0$};
+  % i passi con eta = 1
+  \foreach \w/\l in {-1.5/2.037, -0.338/0.886, 0.366/0.592, 0.499/0.581, 0.541/0.579}
+    \fill[FigColor] (\w,\l) circle (2.5pt);
+  \draw[->, FigColor, thick] (-1.5,2.037) to[bend left=15] (-0.338,0.886);
+  \draw[->, FigColor, thick] (-0.338,0.886) to[bend left=20] (0.366,0.592);
+  \node[FigColor, anchor=east, font=\scriptsize] at (-1.55,1.95) {$w_0$};
+  \node[FigColor, anchor=north east, font=\scriptsize] at (-0.36,0.84) {$w_1$};
+  \node[FigColor, anchor=north, font=\scriptsize] at (0.37,0.5) {$w_2$};
+  \draw[TextGray, dashed] (0.569,0) -- (0.569,0.579);
+  \node[lab, below] at (0.569,-0.25) {$w_{\min}$};
+  \node[anchor=west, align=left, font=\scriptsize] at (1.0,3.4) {$\eta = 1$: \ $w_0 = -1.5$, $w_1 = -0.338$,\\$w_2 = 0.366$, $w_3 = 0.499$, $w_4 = 0.541$};
+\end{tikzpicture}
+\end{widget}
+\caption{La discesa del gradiente con un solo peso $w$, sulla cross-entropy media di un piccolo training set (bias fissato a 0). In $w_0 = -1.5$ la pendenza è negativa, quindi ci si sposta verso destra. Con $\eta = 1$ i passi si accorciano man mano che la pendenza diminuisce, e $w$ si avvicina al minimo $w_{\min} \approx 0.57$.}
+\label{fig:gd}
+\end{figure}
+
+\paragraph{N dimensioni.} In realtà non vogliamo solo sapere se spostarci a destra o a sinistra, ma in quale direzione muoverci nello spazio a $N$ dimensioni degli $N$ parametri che compongono $\boldsymbol{\theta}$. Il gradiente è proprio un vettore di questo tipo, con una componente per ognuna delle $N$ dimensioni. Con due sole dimensioni, ad esempio un peso $w$ e un bias $b$, la loss $\text{Cost}(w, b)$ è una superficie a forma di scodella. L'opposto del gradiente in un punto è allora un vettore nel piano $(w, b)$ che indica dove scendere.
+
+I gradienti reali sono molto più lunghi, perché i pesi sono moltissimi. Per ogni dimensione $w_i$, la componente del gradiente ci dice la pendenza rispetto a quella variabile, ovvero quanto una piccola variazione di $w_i$ influenza la loss totale $L$, e si esprime con la derivata parziale $\frac{\partial}{\partial w_i}$ della loss. Il gradiente è il vettore di queste derivate parziali:
+\begin{equation}
+\nabla L\big(f(x; \boldsymbol{\theta}), y\big) = \begin{bmatrix} \frac{\partial}{\partial w_1} L(f(x; \boldsymbol{\theta}), y) \\ \vdots \\ \frac{\partial}{\partial w_n} L(f(x; \boldsymbol{\theta}), y) \\ \frac{\partial}{\partial b} L(f(x; \boldsymbol{\theta}), y) \end{bmatrix}
+\qquad \text{e} \qquad
+\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t - \eta\, \nabla L\big(f(x; \boldsymbol{\theta}), y\big).
+\end{equation}
+
+\subsection{Il gradiente della regressione logistica}
+Le derivate parziali della cross-entropy loss~\eqref{eq:ce} hanno una forma molto elegante:
+\begin{equation}\label{eq:lr-grad}
+\frac{\partial L_{CE}(\hat{y}, y)}{\partial w_j} = \big[\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y\big]\, x_j, \qquad \frac{\partial L_{CE}(\hat{y}, y)}{\partial b} = \sigma(\mathbf{w} \cdot \mathbf{x} + b) - y.
+\end{equation}
+Il gradiente rispetto a un singolo peso $w_j$ è un valore molto intuitivo: la differenza tra la stima $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$ e il valore vero $y$, moltiplicata per il valore della feature $x_j$ corrispondente.
+
+\begin{osservazione}[Da dove viene il gradiente]
+Il libro ricava la~\eqref{eq:lr-grad} con la regola della catena, usando $\frac{d}{dx}\ln x = \frac{1}{x}$ e la proprietà $\sigma'(z) = \sigma(z)(1 - \sigma(z))$. Posto $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$, e osservando che $\frac{\partial}{\partial w_j}(\mathbf{w} \cdot \mathbf{x} + b) = x_j$:
+\[
+\frac{\partial L_{CE}}{\partial w_j} = -\left[\frac{y}{\hat{y}} - \frac{1 - y}{1 - \hat{y}}\right] \hat{y}(1 - \hat{y})\, x_j = -\big[y(1 - \hat{y}) - (1 - y)\hat{y}\big]\, x_j = (\hat{y} - y)\, x_j.
+\]
+\end{osservazione}
+
+\subsection{La discesa del gradiente stocastica}
+La \textbf{discesa del gradiente stocastica} (stochastic gradient descent, SGD) è un algoritmo online: minimizza la loss calcolandone il gradiente dopo ogni esempio di training, e sposta $\boldsymbol{\theta}$ nella direzione giusta, ovvero opposta al gradiente (algoritmo~\ref{alg:sgd}). Si chiama stocastica perché sceglie a caso un esempio alla volta.
+
+\begin{algorithm}[htbp]
+\caption{La discesa del gradiente stocastica: $L$ è la funzione di loss, $f$ una funzione parametrizzata da $\boldsymbol{\theta}$, $x$ e $y$ gli input e le etichette del training set.}
+\label{alg:sgd}
+\begin{algorithmic}[1]
+\Function{StochasticGradientDescent}{$L(), f(), x, y$}
+  \State $\boldsymbol{\theta} \gets 0$
+  \Repeat
+    \ForAll{coppia di training $(x^{(i)}, y^{(i)})$, in ordine casuale}
+      \State calcola $\hat{y}^{(i)} = f(x^{(i)}; \boldsymbol{\theta})$ e la loss $L(\hat{y}^{(i)}, y^{(i)})$ \Comment{facoltativo: come stiamo andando?}
+      \State $g \gets \nabla_{\boldsymbol{\theta}} L\big(f(x^{(i)}; \boldsymbol{\theta}), y^{(i)}\big)$ \Comment{come spostare $\boldsymbol{\theta}$ per aumentare la loss?}
+      \State $\boldsymbol{\theta} \gets \boldsymbol{\theta} - \eta\, g$ \Comment{andiamo dalla parte opposta}
+    \EndFor
+  \Until{convergenza}
+  \State \Return $\boldsymbol{\theta}$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Iperparametri.} Il learning rate $\eta$ è un \textbf{iperparametro}: se è troppo alto, i passi sono troppo lunghi e l'algoritmo supera il minimo, mentre se è troppo basso i passi sono troppo corti e l'algoritmo impiega troppo tempo. Gli iperparametri sono, in breve, un tipo speciale di parametro di un modello di machine learning: invece di essere appresi dall'algoritmo a partire dalla supervisione, come i parametri normali, vengono scelti da chi progetta l'algoritmo. Nella versione web, la figura~\ref{fig:gd} permette di provare diversi valori di $\eta$.
+
+\paragraph{Un esempio.} Facciamo un passo di discesa del gradiente su un esempio di sentiment in miniatura, con etichetta vera $y = 1$ (positiva) e due feature: $x_1 = 3$ (numero di parole del lessico positivo) e $x_2 = 2$ (numero di parole del lessico negativo). I tre parametri in $\boldsymbol{\theta}_0$ (due pesi e un bias) partono da zero, $w_1 = w_2 = b = 0$, e il learning rate è $\eta = 0.1$.
+
+Il passo di aggiornamento è $\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t - \eta \nabla L(f(x; \boldsymbol{\theta}), y)$, dove il gradiente ha tre componenti. Con la~\eqref{eq:lr-grad}, e dato che $\sigma(0) = 0.5$:
+\[
+\nabla_{w, b} L = \begin{bmatrix} \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_1} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_2} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial b} \end{bmatrix}
+= \begin{bmatrix} (\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y)\, x_1 \\ (\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y)\, x_2 \\ \sigma(\mathbf{w} \cdot \mathbf{x} + b) - y \end{bmatrix}
+= \begin{bmatrix} (\sigma(0) - 1)\, x_1 \\ (\sigma(0) - 1)\, x_2 \\ \sigma(0) - 1 \end{bmatrix}
+= \begin{bmatrix} -0.5\, x_1 \\ -0.5\, x_2 \\ -0.5 \end{bmatrix}
+= \begin{bmatrix} -1.5 \\ -1.0 \\ -0.5 \end{bmatrix}.
+\]
+Ci spostiamo quindi nella direzione opposta al gradiente:
+\[
+\boldsymbol{\theta}_1 = \begin{bmatrix} w_1 \\ w_2 \\ b \end{bmatrix} - \eta \begin{bmatrix} -1.5 \\ -1.0 \\ -0.5 \end{bmatrix} = \begin{bmatrix} 0.15 \\ 0.1 \\ 0.05 \end{bmatrix}.
+\]
+Dopo un passo, tutti i pesi sono cresciuti, perché l'esempio era positivo. Osserviamo che, vedendo abbastanza esempi negativi con molte parole del lessico negativo, $w_2$ diventerebbe prima o poi negativo.
+
+\subsection{Mini-batch}
+La discesa del gradiente stocastica sceglie un solo esempio a caso alla volta, e questo può portare a movimenti molto irregolari. È più comune calcolare il gradiente su gruppi (\textit{batch}) di esempi di training. Nel \textbf{batch training} si usa l'intero dataset, nel \textbf{mini-batch training} un gruppo di $m$ esempi (ad esempio 512 o 1024). In questo caso il costo è la loss media sugli esempi del mini-batch, e il gradiente è la media dei gradienti dei singoli esempi:
+\begin{equation}
+\frac{\partial\, \text{Cost}(\hat{y}, y)}{\partial w_j} = \frac{1}{m} \sum_{i=1}^{m} \big[\sigma(\mathbf{w} \cdot \mathbf{x}^{(i)} + b) - y^{(i)}\big]\, x_j^{(i)}.
+\end{equation}
+
+\section{Overfitting e regolarizzazione}
+Un modello che si adatta perfettamente ai dati di training ha un problema: va in \textbf{overfitting}, ovvero modella anche il rumore. Una parola casuale che predice perfettamente $y$, perché per caso compare in una sola classe, riceverà un peso altissimo, e il modello non saprà generalizzare su un test set in cui quella parola non c'è. Un buon modello deve invece saper generalizzare.
+
+Consideriamo due recensioni di training: \enquote{This movie drew me in, and it'll do the same to you.} ($+$) e \enquote{I can't tell you how much I hated this movie. It sucked.} ($-$). Feature come $x_1 = \text{this}$, $x_2 = \text{movie}$ e $x_3 = \text{hated}$ sono utili o almeno innocue. Feature basate su 4-grammi, come $x_4 = \text{drew me in}$, $x_5 = \text{the same to you}$ o $x_7 = \text{tell you how much}$, si limitano invece a \enquote{memorizzare} il training set, e possono causare problemi.
+
+Un modello a 4-grammi su pochi dati memorizza i dati: ha un'accuratezza del 100\% sul training set, ma sarà sorpreso dai 4-grammi nuovi del test set, e avrà un'accuratezza bassa. I modelli troppo potenti possono quindi andare in overfitting, adattandosi così bene ai dettagli dei dati di training da non generalizzare sul test set. Per evitarlo si usa la \textbf{regolarizzazione} nella regressione logistica e il \textbf{dropout} nelle reti neurali.
+
+\paragraph{Regolarizzazione.} L'idea è aggiungere alla funzione obiettivo un termine di regolarizzazione $R(\boldsymbol{\theta})$ che penalizza i pesi grandi: adattarsi bene ai dati con tanti pesi grandi è peggio che adattarsi un po' meno bene con pesi piccoli. Scrivendo l'obiettivo come massimizzazione della log probability (invece che come minimizzazione della loss):
+\begin{equation}
+\hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)}) - \alpha R(\boldsymbol{\theta})
+\end{equation}
+dove $\alpha$ regola la forza della regolarizzazione. Le scelte più comuni per $R(\boldsymbol{\theta})$ sono due:
+\begin{itemize}
+    \item \textbf{Regolarizzazione L2} (ridge regression): $R(\boldsymbol{\theta})$ è la somma dei quadrati dei pesi. Si chiama così perché è il quadrato della norma L2 $\|\boldsymbol{\theta}\|_2$, ovvero della distanza euclidea di $\boldsymbol{\theta}$ dall'origine:
+    \begin{equation}
+    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_2^2 = \sum_{j=1}^{n} \theta_j^2 \qquad \Longrightarrow \qquad \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} \theta_j^2.
+    \end{equation}
+    \item \textbf{Regolarizzazione L1} (lasso regression): $R(\boldsymbol{\theta})$ è la somma dei valori assoluti dei pesi, ovvero la norma L1 $\|\boldsymbol{\theta}\|_1$ (la distanza di Manhattan):
+    \begin{equation}
+    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_1 = \sum_{i=1}^{n} |\theta_i| \qquad \Longrightarrow \qquad \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} |\theta_j|.
+    \end{equation}
+\end{itemize}
+Il libro aggiunge che la L2 è più facile da ottimizzare, perché la derivata di $\theta^2$ è semplicemente $2\theta$, e preferisce vettori con tanti pesi piccoli. La L1 invece preferisce soluzioni sparse, con alcuni pesi grandi e molti pesi a zero, e quindi con molte meno feature. In entrambi i casi il bias di solito non viene regolarizzato.
+
+\section{Regressione logistica multinomiale}
+Spesso servono più di due classi: sentiment positiva, negativa o neutra, le parti del discorso (nome, verbo, aggettivo, avverbio, preposizione, \dots), o le classi di intervento a cui smistare gli SMS di emergenza. Con più di due classi si usa la \textbf{regressione logistica multinomiale}, detta anche \textbf{softmax regression} o multinomial logit (e, in passato, maximum entropy modeling o MaxEnt). Da qui in poi, \enquote{regressione logistica} indicherà il caso binario.
+
+\subsection{Il softmax}
+Le probabilità di tutte le classi devono ancora sommare a 1, ad esempio $P(\text{positive} \mid \text{doc}) + P(\text{negative} \mid \text{doc}) + P(\text{neutral} \mid \text{doc}) = 1$. Serve quindi una generalizzazione della sigmoide, il \textbf{softmax}, che prende un vettore $\mathbf{z} = [z_1, z_2, \dots, z_k]$ di $k$ valori arbitrari e restituisce una distribuzione di probabilità, con ogni valore in $[0, 1]$ e tutti i valori che sommano a 1:
+\begin{equation}
+\mathrm{softmax}(z_i) = \frac{\exp(z_i)}{\sum_{j=1}^{k} \exp(z_j)}, \qquad 1 \leq i \leq k.
+\end{equation}
+Il softmax di un vettore è quindi a sua volta un vettore:
+\begin{equation}
+\mathrm{softmax}(\mathbf{z}) = \left[\frac{\exp(z_1)}{\sum_{i=1}^{k} \exp(z_i)}, \frac{\exp(z_2)}{\sum_{i=1}^{k} \exp(z_i)}, \dots, \frac{\exp(z_k)}{\sum_{i=1}^{k} \exp(z_i)}\right]
+\end{equation}
+dove il denominatore $\sum_{i=1}^{k} e^{z_i}$ serve a normalizzare tutti i valori in probabilità. Ad esempio, dato il vettore $\mathbf{z} = [0.6, 1.1, -1.5, 1.2, 3.2, -1.1]$, si ottiene
+\[
+\mathrm{softmax}(\mathbf{z}) = [0.055, 0.090, 0.0067, 0.10, 0.74, 0.010].
+\]
+Come la sigmoide, il softmax schiaccia i valori verso 0 o 1: se uno degli input è più grande degli altri, la sua probabilità tende a 1, e le probabilità degli input più piccoli vengono soppresse (figura~\ref{fig:softmax}).
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{softmax}[z={0.6, 1.1, -1.5, 1.2, 3.2, -1.1}]
+\begin{tikzpicture}[nlp, font=\small, x=1.5cm]
+  \draw[TextGray] (0.4,0) -- (6.6,0);
+  \draw[TextGray] (0.4,-3.2) -- (6.6,-3.2);
+  \node[anchor=east, font=\small\itshape] at (0.35,0.9) {$z_i$};
+  \node[anchor=east, font=\small\itshape] at (0.35,-2.3) {$\mathrm{softmax}(z_i)$};
+  \foreach \z/\p [count=\i] in {0.6/0.055, 1.1/0.090, -1.5/0.0067, 1.2/0.10, 3.2/0.74, -1.1/0.010} {
+    \pgfmathsetmacro{\h}{0.45*\z}
+    \ifdim \z pt<0pt \fill[red!35] (\i-0.18,0) rectangle (\i+0.18,\h); \node[font=\scriptsize, below] at (\i,\h) {\z};
+    \else \fill[Accent!45] (\i-0.18,0) rectangle (\i+0.18,\h); \node[font=\scriptsize, above] at (\i,\h) {\z}; \fi
+    \fill[FigColor!60] (\i-0.18,-3.2) rectangle (\i+0.18,{-3.2+2.6*\p});
+    \node[font=\scriptsize, above] at (\i,{-3.2+2.6*\p}) {\p};
+  }
+\end{tikzpicture}
+\end{widget}
+\caption{Il softmax del vettore $\mathbf{z} = [0.6, 1.1, -1.5, 1.2, 3.2, -1.1]$: in alto i logit, in basso le probabilità. Il logit più grande, $3.2$, si prende da solo il 74\% della massa di probabilità.}
+\label{fig:softmax}
+\end{figure}
+
+\subsection{Il softmax nella regressione logistica multinomiale}
+Come per la sigmoide, l'input del softmax è il prodotto scalare tra un vettore di pesi e il vettore di input, più un bias. Ora però servono un vettore di pesi $\mathbf{w}_c$ e un bias $b_c$ separati per ognuna delle $k$ classi:
+\begin{equation}
+p(y = c \mid x) = \frac{\exp(\mathbf{w}_c \cdot \mathbf{x} + b_c)}{\sum_{j=1}^{k} \exp(\mathbf{w}_j \cdot \mathbf{x} + b_j)}.
+\end{equation}
+Il libro osserva che, mettendo i $k$ vettori di pesi come righe di una matrice $W$ e i bias in un vettore $\mathbf{b}$, tutte le probabilità si calcolano in un colpo solo con $\hat{\mathbf{y}} = \mathrm{softmax}(W\mathbf{x} + \mathbf{b})$.
+
+\paragraph{Feature nel caso binario e multinomiale.} Nella regressione logistica binaria un peso positivo spinge verso $y = 1$ e un peso negativo verso $y = 0$. Consideriamo ad esempio la feature
+\[
+x_5 = \begin{cases} 1 & \text{se \enquote{!}} \in \text{doc} \\ 0 & \text{altrimenti} \end{cases}
+\]
+con peso $w_5 = 3.0$, che spinge verso la sentiment positiva. Nel caso multinomiale, invece, ogni classe ha i suoi pesi, e la stessa feature può essere un indizio a favore o contro ciascuna classe. Con tre classi ($+$, $-$ e $0$, neutra) potremmo avere $w_{5,+} = 3.5$, $w_{5,-} = 3.1$ e $w_{5,0} = -5.3$: il punto esclamativo è un indizio sia per la sentiment positiva sia per quella negativa, ma è un forte indizio contro la neutralità.
+
+\section{La classificazione in pratica}
+In Python, il pacchetto \textbf{scikit-learn} fornisce tutto quello che abbiamo visto, insieme a strumenti per estrarre le feature e calcolare le metriche della sezione~\ref{sec:nb-valutazione}:
+\begin{itemize}
+    \item \texttt{SGDClassifier(loss='log\_loss')}: regressione logistica addestrata con la discesa del gradiente stocastica;
+    \item \texttt{LogisticRegression()}: regressione logistica addestrata con altri algoritmi di ottimizzazione, non con SGD;
+    \item \texttt{MultinomialNB()}: Naive Bayes multinomiale.
+\end{itemize}

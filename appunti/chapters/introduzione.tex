@@ -1,0 +1,421 @@
+\chapter{Introduzione}\label{ch:intro}
+Il \textbf{Natural Language Processing} (NLP) è il punto d'incontro tra il linguaggio umano e i sistemi computazionali: è l'insieme delle tecniche che permettono a una macchina di
+\begin{itemize}
+    \item \textbf{capire} il linguaggio umano, scritto o parlato;
+    \item \textbf{interpretare} sfumature, contesto e significati;
+    \item \textbf{generare} testi coerenti e pertinenti;
+    \item \textbf{interagire} attraverso interfacce in linguaggio naturale.
+\end{itemize}
+Il problema è che il linguaggio è ambiguo, vago e dipende dal contesto. Trasformare il senso di una frase in una rappresentazione che un computer possa elaborare è tutt'altro che semplice, e buona parte del corso riguarda proprio i diversi modi in cui si è provato a farlo.
+
+In questo capitolo diamo una panoramica degli argomenti del corso, dalla pipeline classica ai Large Language Models, e poi vediamo il primo strumento concreto per lavorare con il testo: le \textbf{espressioni regolari}, con cui costruiremo anche un piccolo chatbot (ELIZA).
+
+\section{Perché il Natural Language Processing}
+Padroneggiare il linguaggio non serve solo a conversare. Le motivazioni sono almeno quattro:
+\begin{itemize}
+    \item \textbf{Comunicare con l'umano}: interagire nella lingua di tutti i giorni invece che con comandi rigidi o codice, come fanno assistenti vocali, chatbot e motori di ricerca conversazionali. In altre parole, parliamo ai computer invece di programmarli.
+    \item \textbf{Pensiero}: il linguaggio è il mezzo con cui esprimiamo e organizziamo il ragionamento, e gran parte della conoscenza umana è scritta. I modelli più recenti \enquote{ragionano} proprio generando testo, scomponendo un problema in passi (\textit{chain of thought}).
+    \item \textbf{Unificare testo, immagini e azioni}: il linguaggio fa da collante tra modalità diverse. Descrive immagini, trascrive e sintetizza il parlato, si traduce in istruzioni per sistemi autonomi.
+    \item \textbf{Sistemi agentici}: un modello che comprende e produce linguaggio può pianificare, scegliere strumenti e agire per raggiungere un obiettivo.
+\end{itemize}
+
+L'ultimo punto merita un esempio. Il loop \textbf{ReAct} \cite{yao2022react} alterna tre fasi (figura~\ref{fig:react}). Nel \textbf{pensiero} il modello scrive, in linguaggio naturale, cosa sa e cosa gli manca. Nell'\textbf{azione} sceglie uno strumento e lo invoca (cerca, calcola, legge un documento). Nell'\textbf{osservazione} il risultato dello strumento rientra nel testo come nuova informazione. Il ciclo si ripete finché l'obiettivo non è raggiunto, e solo allora il modello produce la risposta finale. La differenza con un chatbot è quindi questa: un chatbot risponde una volta, mentre un agente persegue un obiettivo passo dopo passo, correggendo la rotta con ciò che osserva.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  fase/.style={draw=Accent, fill=Accent!8, rounded corners=4pt, minimum width=2.6cm, minimum height=9mm, align=center}]
+  \node[fase] (p) at (90:1.9) {\textbf{Pensiero}\\[-1pt]{\scriptsize cosa so, cosa manca}};
+  \node[fase] (a) at (-30:1.9) {\textbf{Azione}\\[-1pt]{\scriptsize invoca uno strumento}};
+  \node[fase] (o) at (210:1.9) {\textbf{Osservazione}\\[-1pt]{\scriptsize il risultato rientra nel testo}};
+  \draw[flow, Accent] (p.east) to[bend left=25] (a.north);
+  \draw[flow, Accent] (a.south west) to[bend left=25] (o.south east);
+  \draw[flow, Accent] (o.north) to[bend left=25] (p.west);
+  \node[draw=FigColor, fill=FigColor!15, rounded corners=4pt, minimum height=9mm, anchor=west] (r) at ($(a.east)+(2.3,0)$) {risposta finale};
+  \draw[flow, FigColor, dashed] (a.east) -- node[above, lab] {obiettivo raggiunto} (r.west);
+\end{tikzpicture}
+\caption{Il loop ReAct: il modello alterna pensiero, azione e osservazione finché l'obiettivo non è raggiunto, e solo allora produce la risposta finale.}
+\label{fig:react}
+\end{figure}
+
+\section{La pipeline classica}\label{sec:pipeline}
+Per decenni l'idea guida dell'NLP è stata la \textbf{pipeline}: il testo attraversa una sequenza di moduli separati, e ognuno produce una struttura esplicita e ispezionabile che diventa l'input del modulo successivo (figura~\ref{fig:pipeline}). Consideriamo la frase \enquote{Ho visto l'elefante con il cannocchiale}, che torneremo a usare più volte. I moduli sono:
+\begin{itemize}
+    \item \textbf{Normalizzazione}: tokenizzazione ed espressioni regolari (capitolo~\ref{ch:normalizzazione}).
+    \item \textbf{POS tagging e NER}: categorie grammaticali delle parole ed entità nominate.
+    \item \textbf{Parsing sintattico}: la struttura della frase, sotto forma di albero.
+    \item \textbf{Parsing semantico}: una rappresentazione formale del significato.
+    \item \textbf{Ragionamento e risposta}: inferenza, risposta alla richiesta, azione.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\scriptsize,
+  mod/.style={draw=Accent, fill=Accent!8, rounded corners=3pt, minimum width=1.75cm, minimum height=1.25cm, align=center, text width=1.6cm}]
+  \node[mod, draw=LemmaColor, fill=LemmaColor!12] (t) at (0,0) {\textbf{Testo}\\ \enquote{Ho visto l'elefante\dots}};
+  \node[mod] (n) at (2.2,0) {\textbf{Normaliz\-zazione}\\ token, regex};
+  \node[mod] (p) at (4.4,0) {\textbf{POS e NER}\\ categorie, entità};
+  \node[mod] (s) at (6.6,0) {\textbf{Parsing sintattico}\\ alberi};
+  \node[mod] (m) at (8.8,0) {\textbf{Parsing semantico}\\ significato};
+  \node[mod, draw=FigColor, fill=FigColor!12] (r) at (11,0) {\textbf{Ragiona\-mento}\\ risposta, azione};
+  \foreach \a/\b in {t/n, n/p, p/s, s/m, m/r} \draw[->] (\a) -- (\b);
+\end{tikzpicture}
+\caption{La pipeline classica: ogni modulo è separato dagli altri e produce una struttura esplicita, che diventa l'input del modulo successivo.}
+\label{fig:pipeline}
+\end{figure}
+
+Ogni modulo può essere realizzato con \textbf{regole scritte a mano} oppure con \textbf{modelli appresi da dati annotati}, ad esempio da un \textit{treebank} (una raccolta di frasi annotate con il loro albero sintattico). Accanto ai moduli ci sono poi degli strumenti statistici trasversali, che vedremo nei prossimi capitoli: i \textbf{modelli di linguaggio N-gram}, che assegnano una probabilità a una sequenza di parole (capitolo~\ref{ch:ngram}), e i \textbf{classificatori} come Naive Bayes e la regressione logistica (capitoli~\ref{ch:nb} e~\ref{ch:lr}).
+
+La pipeline ha però dei limiti evidenti: è fragile (un errore in un modulo si propaga a tutti i successivi), ha una copertura limitata, non ha conoscenza del mondo, e il numero di interpretazioni possibili esplode con l'ambiguità. Nella frase dell'elefante, ad esempio, il cannocchiale può essere lo strumento con cui ho visto l'elefante, oppure qualcosa che l'elefante ha con sé. Sono questi limiti ad aver portato alla svolta dei modelli appresi da grandi quantità di testo.
+
+\subsection{Analisi sintattica}
+Il parsing sintattico restituisce la struttura della frase. Ne esistono due rappresentazioni classiche, entrambe in figura~\ref{fig:parse}. L'\textbf{albero a costituenti} raggruppa le parole in sintagmi annidati, mentre l'\textbf{albero a dipendenze} collega direttamente le parole tra loro con archi etichettati: \textit{flight} è l'oggetto diretto (\texttt{dobj}) di \textit{prefer}, \textit{I} ne è il soggetto (\texttt{nsubj}), e così via.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  w/.style={anchor=base, inner sep=1pt},
+  arc/.style={->, Accent, thick, rounded corners=4pt},
+  rel/.style={draw=Accent, fill=white, font=\scriptsize\ttfamily, inner sep=1.5pt}]
+  % albero a dipendenze
+  \foreach \t [count=\i] in {I, prefer, the, morning, flight, through, Denver}
+    \node[w] (w\i) at (1.25*\i, 0) {\t};
+  \newcommand{\dep}[5]{% da, a, altezza, etichetta, spostamento orizzontale sulla testa
+    \draw[arc] ([xshift=#5, yshift=9pt]w#1.north) -- ++(0,#3) -| ([yshift=9pt]w#2.north)
+      node[pos=0.25, rel] {#4};}
+  \dep{2}{1}{0.45}{nsubj}{-3pt}
+  \dep{2}{5}{1.45}{dobj}{3pt}
+  \dep{5}{3}{0.95}{det}{-5pt}
+  \dep{5}{4}{0.45}{nmod}{-1pt}
+  \dep{5}{7}{0.95}{nmod}{4pt}
+  \dep{7}{6}{0.45}{case}{-3pt}
+  \draw[arc] ([yshift=2.4cm]w2.north) node[above, rel] {root} -- ([yshift=9pt]w2.north);
+  % albero a costituenti (semplificato)
+  \begin{scope}[xshift=10.6cm, yshift=1.8cm, level distance=7mm, sibling distance=12mm,
+    every node/.style={font=\scriptsize}]
+    \node {prefer}
+      child {node {I}}
+      child {node {flight}
+        child {node {the}}
+        child {node {morning}}
+        child {node {Denver} child {node {through}}}};
+  \end{scope}
+\end{tikzpicture}
+\caption{Le due rappresentazioni sintattiche della frase \enquote{I prefer the morning flight through Denver}: a sinistra l'albero a dipendenze, con un arco etichettato per ogni relazione grammaticale, a destra la stessa struttura disegnata come albero, con ogni parola sotto quella da cui dipende.}
+\label{fig:parse}
+\end{figure}
+
+\subsection{Rappresentazione del significato}
+Il parsing semantico va un passo oltre e produce una rappresentazione formale del significato. La più classica è la \textbf{logica del primo ordine}. La frase \enquote{Ho un'auto}, ad esempio, diventa:
+\[
+\exists e, y\ \ \text{Avere}(e) \wedge \text{Possessore}(e, \text{Parlante}) \wedge \text{Posseduto}(e, y) \wedge \text{Auto}(y)
+\]
+ovvero: esiste una situazione (o evento) $e$ di \enquote{avere}, il cui possessore è chi parla e la cui cosa posseduta $y$ è un'auto.
+
+Una volta che la frase è una formula logica, la macchina può fare quello che sa fare meglio: verificare, dedurre e rispondere a interrogazioni in modo esatto e spiegabile. Ad esempio, \enquote{A Matteo piace il ristorante Frasca} diventa $\text{Piace}(\text{matteo}, \text{frasca})$, e per verificarla basta controllare che la coppia $\langle \text{matteo}, \text{frasca} \rangle$ compaia nella relazione $\text{Piace} = \{\langle \text{matteo}, \text{frasca} \rangle, \langle \text{katia}, \text{med} \rangle, \dots\}$ della base di conoscenza: se c'è, la frase è vera in quel \enquote{modello} del mondo.
+
+\paragraph{Ruoli semantici.} Un modo per standardizzare i predicati è quello dei \textbf{ruoli semantici}: qualunque sia il verbo, le domande sono sempre le stesse. Chi agisce (\textbf{agente})? Cosa subisce l'azione (\textbf{tema})? Con cosa (\textbf{strumento})? In \enquote{Sasha ha rotto la finestra} l'agente è Sasha e il tema la finestra, in \enquote{Pat ha aperto la porta} l'agente è Pat e il tema la porta.
+
+Risorse come \textit{PropBank} e \textit{FrameNet} catalogano a mano i ruoli di migliaia di verbi, e la macchina impara a etichettarli in una frase nuova (\textit{Semantic Role Labeling}). Lo schema è lo stesso del treebank: non si scrivono regole, si annotano esempi e si impara a imitarli.
+
+\paragraph{Grafi di significato.} L'\textbf{Abstract Meaning Representation} (AMR) \cite{banarescu2013amr} standardizza invece i concetti, rappresentando il significato come un grafo (figura~\ref{fig:amr}). In \enquote{The boy wants the girl to believe him} c'è un evento di \enquote{volere} (\texttt{want-01}): chi vuole (\texttt{ARG0}) è un ragazzo, e ciò che vuole (\texttt{ARG1}) è un evento di \enquote{credere} (\texttt{believe-01}) in cui la ragazza crede allo stesso ragazzo. La frase \enquote{Il ragazzo desidera essere creduto dalla ragazza} produce lo stesso grafo: parole e sintassi diverse, significato standardizzato.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  c/.style={draw=Accent, fill=Accent!8, rounded corners=3pt, inner sep=3pt, font=\small\ttfamily},
+  r/.style={font=\scriptsize\ttfamily, fill=white, inner sep=1pt}]
+  \node[c] (want) at (0,0) {want-01};
+  \node[c] (boy) at (-1.6,-1.6) {boy};
+  \node[c] (bel) at (1.8,-1.1) {believe-01};
+  \node[c] (girl) at (3.4,-2.4) {girl};
+  \draw[->, thick, Accent] (want) -- node[r] {ARG0} (boy);
+  \draw[->, thick, Accent] (want) -- node[r] {ARG1} (bel);
+  \draw[->, thick, Accent] (bel) -- node[r] {ARG0} (girl);
+  \draw[->, thick, Accent] (bel) to[bend left=20] node[r] {ARG1} (boy);
+\end{tikzpicture}
+\caption{Il grafo AMR di \enquote{The boy wants the girl to believe him}: lo stesso nodo \texttt{boy} è chi vuole (\texttt{ARG0} di \texttt{want-01}) ed è anche colui a cui la ragazza crede (\texttt{ARG1} di \texttt{believe-01}).}
+\label{fig:amr}
+\end{figure}
+
+\section{Il significato come vettore}
+Nel 2013 Mikolov et al. introducono \textbf{word2vec} \cite{mikolov2013word2vec}, e cambia il modo di rappresentare il significato. Ogni parola diventa una lista di numeri, cioè un \textbf{vettore}, calcolato a partire dalle sue \enquote{compagnie} nei testi, ovvero dalle parole che le stanno accanto. Ne seguono due proprietà:
+\begin{itemize}
+    \item \textbf{Parole simili finiscono vicine}: i sinonimi si raggruppano da soli, senza che nessuno l'abbia specificato.
+    \item \textbf{Le direzioni hanno un senso}: la stessa direzione porta da \textit{uomo} a \textit{re} e da \textit{donna} a \textit{regina}, per cui $\text{re} - \text{uomo} + \text{donna} \approx \text{regina}$ (figura~\ref{fig:embedding}).
+\end{itemize}
+Da qui in poi, in NLP, il significato di una parola è un vettore, e tutto il resto è costruito sopra questa idea. Il dettaglio che conta è che il modello era piccolo e semplicissimo: la sorpresa fu che bastasse.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\scriptsize,
+  pt/.style={circle, inner sep=1.6pt},
+  a/.style={pt, fill=Accent}, b/.style={pt, fill=ObsColor}, c/.style={pt, fill=LemmaColor}, d/.style={pt, fill=FigColor}]
+  \draw[->, TextGray] (0,0) -- (7.4,0);
+  \draw[->, TextGray] (0,0) -- (0,4.6);
+  \foreach \x/\y/\w in {0.9/4.1/elefante, 1.4/3.7/giraffa, 1.0/3.3/zebra}
+    \node[c, label=right:\w] at (\x,\y) {};
+  \foreach \x/\y/\w in {1.0/0.9/auto, 1.4/0.6/vettura, 1.9/1.0/macchina, 2.7/0.7/camion}
+    \node[a, label=right:\w] at (\x,\y) {};
+  \foreach \x/\y/\w in {5.6/1.0/cannocchiale, 6.0/0.6/binocolo}
+    \node[d, label=right:\w] at (\x,\y) {};
+  \node[b, label=right:uomo] (u) at (3.0,2.6) {};
+  \node[b, label=right:re] (r) at (4.1,3.6) {};
+  \node[b, label=right:donna] (d) at (3.6,1.9) {};
+  \node[b, label=right:regina] (q) at (4.7,2.9) {};
+  \draw[->, thick, ObsColor, dashed] (u) -- (r);
+  \draw[->, thick, ObsColor, dashed] (d) -- (q);
+  \node[ObsColor, font=\small\ttfamily] at (5.4,4.3) {re $-$ uomo $+$ donna $\approx$ regina};
+\end{tikzpicture}
+\caption{Uno spazio di word embedding disegnato in due dimensioni (nella realtà sono centinaia): parole simili finiscono vicine, e la stessa direzione porta da \textit{uomo} a \textit{re} e da \textit{donna} a \textit{regina}.}
+\label{fig:embedding}
+\end{figure}
+
+\paragraph{Dal vettore statico al vettore contestuale.} In word2vec una parola ha \textbf{un solo vettore}, sempre lo stesso. Pensiamo alla parola \textit{macchina}: il suo vettore sta a metà strada tra le auto, i dispositivi e la burocrazia, un compromesso che non descrive bene nessuno dei tre significati.
+
+Con il Transformer (2017) \cite{vaswani2017attention}, e poi con BERT e GPT (2018), il vettore di una parola viene invece \textbf{calcolato ogni volta}, guardando il contesto. La stessa parola finisce quindi in punti diversi dello spazio a seconda della frase: \enquote{Ho parcheggiato la macchina} la avvicina ad \textit{auto}, \enquote{La macchina del caffè è rotta} a \textit{elettrodomestico}, \enquote{La macchina amministrativa è lenta} a \textit{burocrazia}. Polisemia e ambiguità si risolvono così \enquote{da sole}, senza nessuna regola scritta: è il contesto a fare il lavoro, grazie a un meccanismo che si chiama \textbf{attenzione}.
+
+\section{Large Language Models}\label{sec:llm}
+Un \textbf{modello di linguaggio} (language model) è un programma che, dato un testo, stima quanto è probabile ogni possibile parola successiva:
+\[
+P(\text{parola} \mid \text{tutte le parole precedenti}).
+\]
+Forniamo il seguente esempio: \enquote{Crostata con marmellata di \dots}. Il modello assegna una probabilità a ogni parola del vocabolario (decine di migliaia di parole), e \textit{albicocche} deve avere una probabilità alta, \textit{salsiccia} bassa e \textit{satellite} bassissima (figura~\ref{fig:next-word}). Per farlo bene il modello deve aver assorbito la grammatica (dopo \enquote{di} viene un nome), il lessico (le marmellate si fanno con la frutta) e il senso comune (di albicocche più che di kiwi).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, font=\small]
+  \foreach \w/\p [count=\i] in {albicocche/46.0, fragole/22.0, ciliegie/14.0, arance/9.0, salsiccia/0.4, satellite/0.0} {
+    \node[anchor=east] at (0,-0.55*\i) {\w};
+    \fill[Accent!70] (0.1,-0.55*\i-0.18) rectangle ({0.1+0.13*\p},-0.55*\i+0.18);
+    \node[anchor=west, lab] at ({0.15+0.13*\p},-0.55*\i) {\p\,\%};
+  }
+  \node[lab, anchor=west] at (0.1,0) {probabilità della parola successiva};
+\end{tikzpicture}
+\caption{La distribuzione di probabilità sulla parola successiva a \enquote{Crostata con marmellata di \dots}: \textit{albicocche} è la più probabile, \textit{satellite} ha probabilità praticamente nulla.}
+\label{fig:next-word}
+\end{figure}
+
+L'idea è vecchia, risale a Shannon (1948) \cite{shannon1948}, e la ritroveremo nel capitolo~\ref{ch:ngram} con i modelli N-gram. La novità è realizzarla con reti neurali molto grandi e con vettori contestuali. Una precisazione: il modello non lavora su parole ma su \textbf{token}. Alcune parole possono essere suddivise in più token (ad esempio \enquote{marmell}, \enquote{ata}), scelti in automatico in base alla frequenza, e il vocabolario è di 50--100 mila token\footnote{Vedremo come si costruisce un vocabolario di questo tipo nella sezione~\ref{sec:bpe}, con l'algoritmo BPE. Nel seguito diremo \enquote{parola} per semplicità, consapevoli che è un'approssimazione.}.
+
+\paragraph{Perché indovinare la parola insegna così tanto?} Per predire bene la parola successiva bisogna avere sviluppato delle competenze precise:
+\begin{itemize}
+    \item \enquote{La capitale della Francia è \dots}: i \textbf{fatti};
+    \item \enquote{Il trofeo non entra nella valigia perché è troppo grande. Il troppo grande è il \dots}: il \textbf{senso comune};
+    \item \enquote{Domanda: $17 \times 3$? Risposta: \dots}: il \textbf{calcolo};
+    \item \enquote{Inglese: house. Francese: \dots}: la \textbf{traduzione};
+    \item \enquote{Ho visto l'elefante con il cannocchiale, così ho potuto guardarlo da \dots}: la \textbf{disambiguazione}.
+\end{itemize}
+L'intuizione di GPT-2 (2019) è che un modello abbastanza grande, per predire meglio, finisce per imparare a svolgere i compiti che i testi \enquote{dimostrano}: riassumere, tradurre, rispondere, anche se nessuno glieli ha insegnati. Con GPT-3 (2020) basta poi mostrare due o tre esempi nella richiesta (\textit{few-shot}) perché il modello continui lo schema: il compito si descrive a parole, e il linguaggio diventa l'interfaccia di programmazione.
+
+\paragraph{Come si addestra un modello GPT.} Si prende un testo, si nasconde la parola successiva e si chiede al modello la sua distribuzione di probabilità. Una funzione di \textbf{loss} misura l'errore, ovvero quanta poca probabilità è andata alla parola giusta. I \textbf{parametri} (i numeri interni del modello, i pesi delle connessioni) vengono poi ritoccati di pochissimo nella direzione che la riduce, con la discesa del gradiente che vedremo nel capitolo~\ref{ch:lr}. Il processo continua con la parola successiva\footnote{In realtà è una semplificazione: la loss viene calcolata in parallelo su tutte le posizioni del testo.}. In questa fase non serve nessun annotatore umano, solo testo. La crescita dei modelli è stata rapida:
+\begin{itemize}
+    \item \textbf{2017, Transformer}: l'architettura basata sull'attenzione \cite{vaswani2017attention}.
+    \item \textbf{2018, GPT-1}: 117 milioni di parametri, addestrato su 7000 libri (circa un miliardo di parole).
+    \item \textbf{2019, GPT-2}: 1,5 miliardi di parametri e 40 GB di pagine web, svolge compiti mai insegnati.
+    \item \textbf{2020, GPT-3}: 175 miliardi di parametri e 300 miliardi di parole, impara \enquote{al volo} da pochi esempi nel prompt.
+    \item \textbf{2022, ChatGPT}: GPT-3.5 più un allineamento con feedback umano (InstructGPT), 100 milioni di utenti dopo due mesi.
+\end{itemize}
+Più parametri vogliono dire più capacità, a patto di avere abbastanza dati.
+
+\section{Espressioni regolari}\label{sec:regex}
+Lasciamo la panoramica e passiamo al primo strumento concreto. Un'\textbf{espressione regolare} (regular expression, o regex) è un linguaggio formale per specificare stringhe di testo: in termini più rigorosi, è una notazione algebrica che caratterizza un insieme di stringhe. Le regex si usano in ogni linguaggio di programmazione, in strumenti come \texttt{grep} e negli editor di testo, e servono sia a \textbf{cercare} un pattern in un testo sia a specificare come \textbf{modificarlo}. In Python, ad esempio, \verb|re.search(pattern, string)| restituisce il primo match del pattern dentro la stringa.
+
+Forniamo il seguente esempio, su cui torneremo: come cerchiamo in un testo tutte le occorrenze di \textit{woodchuck}, \textit{woodchucks}, \textit{Woodchuck} e \textit{Woodchucks}? Il pattern più semplice è una sequenza di caratteri, come \verb|woodchuck|, che però trova solo la prima delle quattro forme: le regex distinguono maiuscole e minuscole. Servono quindi degli operatori.
+
+\subsection{Disgiunzioni}
+Le \textbf{parentesi quadre} specificano una disgiunzione di caratteri: il pattern fa match con uno qualsiasi dei caratteri tra parentesi. Con un trattino si specifica invece un \textbf{intervallo} (range) di caratteri. Alcuni esempi sono in tabella~\ref{tab:regex-disj}, dove è sottolineato il primo match.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lll}
+\toprule
+Pattern & Match & Esempio \\
+\midrule
+\verb|[wW]oodchuck| & \textit{Woodchuck} o \textit{woodchuck} & \underline{Woodchuck} \\
+\verb|[1234567890]| & una cifra qualsiasi & plenty of \underline{7} to 5 \\
+\verb|[A-Z]| & una lettera maiuscola & we should call it \enquote{\underline{D}renched Blossoms} \\
+\verb|[a-z]| & una lettera minuscola & \underline{m}y beans were impatient \\
+\verb|[0-9]| & una singola cifra & Chapter \underline{1}: Down the Rabbit Hole \\
+\bottomrule
+\end{tabular}
+\caption{Disgiunzioni di caratteri con le parentesi quadre e con gli intervalli.}
+\label{tab:regex-disj}
+\end{table}
+
+Il \textbf{caret} \verb|^| subito dopo la parentesi quadra aperta nega la disgiunzione: \verb|[^Ss]| fa match con qualsiasi carattere che non sia né \textit{S} né \textit{s}. Il caret ha questo significato solo se è il primo simbolo dentro le parentesi, altrimenti indica semplicemente il carattere \verb|^| (tabella~\ref{tab:regex-neg}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lll}
+\toprule
+Pattern & Match & Esempio \\
+\midrule
+\verb|[^A-Z]| & non una lettera maiuscola & O\underline{y}fn pripetchik \\
+\verb|[^Ss]| & né \textit{S} né \textit{s} & \underline{I} have no exquisite reason \\
+\verb|[^e^]| & né \textit{e} né \verb|^| & \underline{L}ook here \\
+\verb|a^b| & la stringa \verb|a^b| & look up \verb|a^b| now \\
+\bottomrule
+\end{tabular}
+\caption{Il caret come negazione dentro le parentesi quadre, oppure come semplice carattere.}
+\label{tab:regex-neg}
+\end{table}
+
+Le parentesi quadre non bastano però per disgiunzioni tra stringhe. \textit{Woodchuck} è anche un altro nome della marmotta (\textit{groundhog}), e per cercare l'una o l'altra parola si usa il \textbf{pipe}: \verb!groundhog|woodchuck! fa match con entrambe, e \verb!a|b|c! equivale a \verb|[abc]|. I due operatori si combinano, ad esempio in \verb![gG]roundhog|[Ww]oodchuck!.
+
+\subsection{Contatori e caratteri jolly}
+Alcuni operatori dicono quante volte deve comparire il carattere che li precede:
+\begin{itemize}
+    \item \verb|?|: zero o una volta, quindi \verb|colou?r| fa match con \textit{color} e \textit{colour};
+    \item \verb|*| (\textbf{Kleene star}): zero o più volte, quindi \verb|oo*h!| fa match con \textit{oh!}, \textit{ooh!}, \textit{oooh!} e così via;
+    \item \verb|+| (\textbf{Kleene plus}): una o più volte, quindi \verb|o+h!| fa match con le stesse stringhe di \verb|oo*h!|, e \verb|baa+| con \textit{baa}, \textit{baaa}, \textit{baaaa}, \dots;
+    \item \verb|.|: un carattere qualsiasi (tranne il newline), quindi \verb|beg.n| fa match con \textit{begin}, \textit{begun} e \textit{beg3n}.
+\end{itemize}
+Il punto si usa spesso insieme alla Kleene star: \verb|.*| indica una stringa qualsiasi, anche vuota, e lo ritroveremo in ELIZA. Il libro aggiunge anche il contatore esplicito \verb|{n}|, che indica esattamente $n$ occorrenze: \verb|\d{2}| sono due cifre consecutive.
+
+\subsection{Backslash e ancore}
+Il \textbf{backslash} ha due usi. Il primo è riferirsi a un carattere speciale come carattere normale: \verb|\.| è un punto, \verb|\*| un asterisco, \verb|\[| una parentesi quadra e \verb|\\| il backslash stesso. Il secondo è indicare i caratteri di escape, come \verb|\n| (newline) e \verb|\t| (tab). Esistono inoltre degli \textbf{alias} per gli insiemi di caratteri più comuni (tabella~\ref{tab:regex-alias}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llll}
+\toprule
+Alias & Espansione & Match & Esempio \\
+\midrule
+\verb|\d| & \verb|[0-9]| & una cifra & Party of \underline{5} \\
+\verb|\D| & \verb|[^0-9]| & una non cifra & \underline{B}lue moon \\
+\verb|\w| & \verb|[a-zA-Z0-9_]| & alfanumerico o underscore & \underline{D}aiyu \\
+\verb|\W| & \verb|[^\w]| & non alfanumerico & \underline{!}!!! \\
+\verb|\s| & \verb|[ \r\t\n\f]| & spazio bianco & in\underline{\ }Concord \\
+\verb|\S| & \verb|[^\s]| & non spazio bianco & \underline{i}n Concord \\
+\bottomrule
+\end{tabular}
+\caption{Alias per gli insiemi di caratteri più comuni.}
+\label{tab:regex-alias}
+\end{table}
+
+Le \textbf{ancore} legano invece il pattern a una posizione precisa della stringa: \verb|^| indica l'inizio della riga e \verb|$| la fine. Ad esempio \verb|^[A-Z]| fa match con la \textit{P} di \textit{Palo Alto} solo se si trova a inizio riga. Allo stesso modo \verb|\.$| fa match con il punto finale di \textit{The end.}, mentre \verb|.$| con l'ultimo carattere della riga, che sia un punto, un punto interrogativo o un punto esclamativo.
+
+Il caret ha quindi tre significati: inizio riga, negazione dentro le parentesi quadre, semplice carattere. Un'altra ancora utile è \verb|\b|, il \textbf{confine di parola}: \verb|\bthe\b| fa match con la parola \textit{the} ma non con \textit{other}\footnote{Per le regex una \enquote{parola} è una sequenza di lettere, cifre e underscore, come gli identificatori dei linguaggi di programmazione. Le ancore non consumano caratteri: fanno match con la stringa vuota in una certa posizione.}.
+
+\subsection{Un esempio: trovare \textit{the}}
+Vogliamo trovare in un testo tutte le occorrenze dell'articolo inglese \textit{the}. Il pattern più semplice, \verb|the|, non trova le occorrenze a inizio frase, scritte con la maiuscola. Possiamo correggerlo con \verb|[tT]he|, che però restituisce anche il \textit{the} contenuto in \textit{other} o \textit{theology}. Le slide propongono allora di richiedere un carattere non alfabetico prima e dopo, con \verb|[^a-zA-Z][tT]he[^a-zA-Z]|, mentre il libro usa i confini di parola, con \verb|\b[tT]he\b|.
+
+Le due soluzioni non sono equivalenti: la prima richiede che ci sia un carattere prima di \textit{The}, e quindi non trova un \textit{The} all'inizio della riga (figura~\ref{fig:regex-the}).
+
+Il processo che abbiamo seguito si basa sulla correzione di due tipi di errore:
+\begin{itemize}
+    \item \textbf{Falsi positivi}: stringhe trovate per errore, come \textit{other} o \textit{theology}.
+    \item \textbf{Falsi negativi}: stringhe che avremmo dovuto trovare e che invece abbiamo perso, come \textit{The}.
+\end{itemize}
+Ridurre l'errore complessivo richiede due sforzi tra loro antagonisti: aumentare la \textbf{precision} (ridurre i falsi positivi) e aumentare la \textbf{recall} (ridurre i falsi negativi). È un problema che torna di continuo in NLP, e daremo una definizione precisa delle due misure nella sezione~\ref{sec:nb-valutazione}.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{regex-match}
+\begin{tikzpicture}[nlp, font=\small]
+  \tikzset{pl/.style={inner xsep=0pt, inner ysep=2.5pt, font=\small\ttfamily},
+    tp/.style={pl, fill=LemmaColor!30, draw=LemmaColor},
+    fp/.style={pl, fill=red!20, draw=red!70!black},
+    fn/.style={pl, draw=red!70!black, dashed, thick}}
+  \newcommand{\riga}[3]{% y, pattern, frammenti stile/testo
+    \node[anchor=base east, font=\small\ttfamily, Accent] at (-0.4,#1) {#2};
+    \node[pl, anchor=base west] (f0) at (0,#1) {};
+    \foreach \s/\t [count=\i] in {#3} {
+      \pgfmathtruncatemacro{\j}{\i-1}
+      \node[\s, anchor=base west] (f\i) at (f\j.base east) {\strut\t\null};
+    }}
+  \riga{0}{the}{fn/The, pl/~o, fp/the, pl/r day~, tp/the, pl/~, fp/the, pl/ology class was~, tp/the, pl/~best.}
+  \riga{-0.75}{[tT]he}{tp/The, pl/~o, fp/the, pl/r day~, tp/the, pl/~, fp/the, pl/ology class was~, tp/the, pl/~best.}
+  \riga{-1.5}{[\textasciicircum a-zA-Z][tT]he[\textasciicircum a-zA-Z]}{fn/The, pl/~other day, tp/~the~, pl/theology class was, tp/~the~, pl/best.}
+  \riga{-2.25}{\textbackslash b[tT]he\textbackslash b}{tp/The, pl/~other day~, tp/the, pl/~theology class was~, tp/the, pl/~best.}
+  \node[tp, anchor=base west] at (0,-3.2) {\strut\ match corretto\ };
+  \node[fp, anchor=base west] at (3.2,-3.2) {\strut\ falso positivo\ };
+  \node[fn, anchor=base west] at (6.2,-3.2) {\strut\ falso negativo\ };
+\end{tikzpicture}
+\end{widget}
+\caption{I quattro tentativi per trovare l'articolo \textit{the} nella frase \enquote{The other day the theology class was the best.}. Il pattern \texttt{the} perde il \textit{The} iniziale e trova \textit{the} dentro \textit{other} e \textit{theology}, mentre \texttt{[tT]he} recupera il \textit{The} ma mantiene i falsi positivi. La versione delle slide elimina i falsi positivi, ma senza un carattere prima del \textit{The} iniziale lo perde di nuovo. Con i confini di parola \texttt{\textbackslash{}b} si trovano tutte e sole le tre occorrenze.}
+\label{fig:regex-the}
+\end{figure}
+
+\subsection{Sostituzioni e capture group}
+Un uso molto comune delle regex è la \textbf{sostituzione}, in cui si sostituisce una stringa con un'altra. Nei comandi UNIX (e in molti editor) si scrive \verb|s/regexp1/pattern/|: ad esempio \verb|s/colour/color/| sostituisce \textit{colour} con \textit{color}. In Python si usa invece \verb|re.sub(pattern, repl, string)|.
+
+Spesso però la stringa da inserire dipende da quella trovata. Supponiamo di voler racchiudere tra parentesi angolari tutti i numeri di un testo, trasformando \textit{the 35 boxes} in \textit{the <35> boxes}. Lo strumento giusto è il \textbf{capture group}. Le parentesi tonde \enquote{catturano} la parte di testo che fa match e la memorizzano in un registro numerato (1, 2, 3, \dots, da sinistra verso destra). Nella sostituzione si fa poi riferimento al contenuto del registro con \verb|\1|, \verb|\2| e così via:
+\begin{center}
+\verb|s/([0-9]+)/<\1>/|
+\end{center}
+
+I registri si possono usare anche nel pattern stesso, per trovare ripetizioni. Il pattern
+\begin{center}
+\verb|the (.*)er they (.*), the \1er we \2|
+\end{center}
+fa match con \textit{the faster they ran, the faster we ran}, ma non con \textit{the faster they ran, the faster we ate}, perché nel secondo caso il contenuto del secondo registro (\textit{ran}) non si ripete.
+
+Le parentesi hanno quindi una doppia funzione: \textbf{raggruppano} i termini e \textbf{catturano} il match. Come raggruppamento servono a stabilire a cosa si applica un operatore\footnote{Le sequenze di caratteri hanno precedenza sulla disgiunzione e i contatori hanno precedenza sulle sequenze. Per questo \texttt{guppy|ies} fa match con \textit{guppy} o con \textit{ies}, mentre per \textit{guppy} o \textit{guppies} bisogna scrivere \texttt{gupp(y|ies)}.}: \verb|(The )?\w+| fa match con \textit{The dog} e con \textit{house}, mentre \verb|(very )*challenging| fa match con \textit{very very challenging}. Quando vogliamo raggruppare senza catturare, usiamo un \textbf{non-capturing group}, scrivendo \verb|?:| dopo la parentesi aperta. Ad esempio, \verb!(?:some|a few) (people|cats) like some \1! fa match con \textit{some cats like some cats} ma non con \textit{some cats like some some}: il primo gruppo non viene memorizzato, quindi \verb|\1| si riferisce al secondo.
+
+\subsection{Lookahead}
+A volte serve guardare avanti nel testo per controllare se un pattern fa match, senza però avanzare nella stringa. Le \textbf{lookahead assertion} fanno proprio questo:
+\begin{itemize}
+    \item \verb|(?= pattern)| è vera se \textit{pattern} fa match, ma ha ampiezza zero (\textit{zero-width}), ovvero non sposta il puntatore al carattere corrente;
+    \item \verb|(?! pattern)| è vera se \textit{pattern} non fa match, anche questa con ampiezza zero.
+\end{itemize}
+Il lookahead negativo serve tipicamente a escludere un caso particolare. Ad esempio, per trovare a inizio riga una qualsiasi parola che non inizi con \textit{Volcano} si scrive \verb|^(?!Volcano)[A-Za-z]+|: il lookahead controlla che la riga non inizi con \textit{Volcano}, poi \verb|[A-Za-z]+| consuma la parola.
+
+\section{ELIZA}\label{sec:eliza}
+Una semplice applicazione delle regex è \textbf{ELIZA} \cite{weizenbaum1966eliza}, uno dei primi sistemi di NLP, realizzato da Joseph Weizenbaum nel 1966. ELIZA imita uno psicoterapeuta rogersiano\footnote{La terapia rogersiana è centrata sul paziente: il terapeuta riformula e restituisce al paziente ciò che dice. È un dominio in cui si può rispondere in modo credibile senza conoscere niente del mondo.} e usa il pattern matching per riconoscere frasi come \enquote{I need X}, trasformandole in risposte come \enquote{What would it mean to you if you got X?}. Una conversazione tipica è questa:
+
+\begin{center}
+\begin{tabular}{ll}
+User: & Men are all alike. \\
+ELIZA: & IN WHAT WAY \\
+User: & They're always bugging us about something or other. \\
+ELIZA: & CAN YOU THINK OF A SPECIFIC EXAMPLE \\
+User: & Well, my boyfriend made me come here. \\
+ELIZA: & YOUR BOYFRIEND MADE YOU COME HERE \\
+User: & He says I'm depressed much of the time. \\
+ELIZA: & I AM SORRY TO HEAR YOU ARE DEPRESSED \\
+\end{tabular}
+\end{center}
+
+ELIZA funziona con una \textbf{cascata di sostituzioni}: ognuna fa match con una parte della frase in input e la trasforma. Il libro descrive due fasi. Nella prima l'input viene portato in maiuscolo e si scambiano i pronomi, sostituendo \textit{MY} con \textit{YOUR}, \textit{I'M} con \textit{YOU ARE} e così via, in modo che quando ELIZA ripete una parte della frase sembri riferirsi correttamente all'utente. Nella seconda si applicano le regole che trasformano l'input in una risposta completa, come queste:
+\begin{center}
+\begin{tabular}{l}
+\verb+s/.* I'M (depressed|sad) .*/I AM SORRY TO HEAR YOU ARE \1/+ \\
+\verb+s/.* I AM (depressed|sad) .*/WHY DO YOU THINK YOU ARE \1/+ \\
+\verb|s/.* all .*/IN WHAT WAY?/| \\
+\verb|s/.* always .*/CAN YOU THINK OF A SPECIFIC EXAMPLE?/| \\
+\end{tabular}
+\end{center}
+La figura~\ref{fig:eliza} mostra la cascata completa usata nella versione web, dove si può conversare con ELIZA e vedere quale regola scatta a ogni frase.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{eliza}
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  regola/.style={draw=Accent, fill=Accent!6, rounded corners=2pt, text width=10.2cm, align=left, minimum height=6mm, anchor=west, font=\scriptsize\ttfamily, inner xsep=5pt},
+  scatta/.style={regola, draw=FigColor, fill=FigColor!18, thick},
+  io/.style={draw=LemmaColor, fill=LemmaColor!12, rounded corners=3pt, inner sep=4pt, font=\small\ttfamily}]
+  \node[io, anchor=west] (in) at (0,1.2) {Well, my boyfriend made me come here.};
+  \node[lab, anchor=west] at (7.4,1.2) {input dell'utente};
+  \node[regola, anchor=west] (up) at (0,0.3) {1. tutto in maiuscolo, poi I'M $\to$ YOU ARE, MY $\to$ YOUR, ME $\to$ YOU};
+  \foreach \t [count=\i] in {
+      2. .* YOU ARE (DEPRESSED|SAD) .* $\to$ I AM SORRY TO HEAR YOU ARE \textbackslash 1,
+      3. .* I AM (DEPRESSED|SAD) .* $\to$ WHY DO YOU THINK YOU ARE \textbackslash 1,
+      4. .* ALL .* $\to$ IN WHAT WAY?,
+      5. .* ALWAYS .* $\to$ CAN YOU THINK OF A SPECIFIC EXAMPLE?,
+      6. .* I NEED (.*) $\to$ WHAT WOULD IT MEAN TO YOU IF YOU GOT \textbackslash 1?}
+    \node[regola] (r\i) at (0,0.3-0.7*\i) {\t};
+  \node[scatta] (r6) at (0,0.3-0.7*6) {7. .* (YOUR .*) $\to$ \textbackslash 1};
+  \node[regola] (r7) at (0,0.3-0.7*7) {8. altrimenti $\to$ PLEASE GO ON};
+  \node[io, anchor=west, draw=FigColor, fill=FigColor!12] (out) at (0,-5.5) {YOUR BOYFRIEND MADE YOU COME HERE};
+  \node[lab, anchor=west] at (7.4,-5.5) {risposta di ELIZA};
+  \draw[->, thick, FigColor] (r6.east) -- ++(0.4,0) |- (out.east);
+  \node[lab, anchor=west, align=left] at (11.05,-2.4) {si applica la\\prima regola\\che fa match};
+\end{tikzpicture}
+\end{widget}
+\caption{La cascata di regole di ELIZA. Dopo il passaggio in maiuscolo e lo scambio dei pronomi, la frase \enquote{Well, my boyfriend made me come here.} diventa \enquote{WELL, YOUR BOYFRIEND MADE YOU COME HERE.}: non contiene né \textit{DEPRESSED}, né \textit{ALL}, né \textit{ALWAYS}, né \textit{I NEED}, quindi scatta la regola 7, che ripete la frase a partire da \textit{YOUR}.}
+\label{fig:eliza}
+\end{figure}
+
+ELIZA non capisce niente di quello che le viene detto, eppure molte delle persone che la usavano si convincevano del contrario. Al di là della curiosità storica, l'esempio mostra che le espressioni regolari hanno un ruolo sorprendentemente grande in NLP. Sequenze sofisticate di regex sono spesso il primo modello per qualsiasi elaborazione del testo. Per i compiti difficili si usano classificatori di machine learning, ma anche in quel caso le regex restano utili per il pre-processing e come feature dei classificatori, perché sono molto efficaci nel catturare generalizzazioni. Il prossimo capitolo comincia proprio da qui, con la tokenizzazione del testo.

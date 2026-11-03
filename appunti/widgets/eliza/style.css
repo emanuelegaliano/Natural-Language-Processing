@@ -1,0 +1,29 @@
+.w-eliza { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+@media (max-width: 720px) { .w-eliza { grid-template-columns: minmax(0, 1fr); } }
+.w-eliza .el-log {
+  height: 15rem; overflow-y: auto; padding: 0.6rem 0.8rem; background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem;
+}
+.w-eliza .el-log p { margin: 0 0 0.45rem; display: grid; grid-template-columns: 3.6rem 1fr; gap: 0.4rem; }
+.w-eliza .el-log span { color: var(--ink-soft); }
+.w-eliza .el-bot { color: var(--accent); }
+.w-eliza .el-form { display: flex; gap: 0.5rem; margin: 0.6rem 0; }
+.w-eliza .el-input {
+  flex: 1; min-width: 0; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 0.3rem 0.5rem;
+}
+.w-eliza .el-input:focus { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
+.w-eliza .el-examples { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.w-eliza .el-ex {
+  font: inherit; font-size: 0.75rem; color: var(--ink); background: var(--surface); cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.15rem 0.6rem;
+}
+.w-eliza .el-ex:hover { border-color: var(--accent-soft); }
+.w-eliza .el-head { margin: 0 0 0.3rem; font-size: 0.85rem; color: var(--ink-soft); }
+.w-eliza .el-rules { margin: 0; padding-left: 1.6rem; font-size: 0.78rem; }
+.w-eliza .el-rule { padding: 0.15rem 0.3rem; border-radius: 3px; transition: background calc(0.3s / var(--speed, 1)); }
+.w-eliza .el-rule code { font-family: var(--font-mono); }
+.w-eliza .el-rule.on { background: color-mix(in oklab, var(--fig) 22%, transparent); box-shadow: inset 2px 0 0 var(--fig); }
+.w-eliza .el-steps { margin-top: 0.7rem; font-size: 0.78rem; display: grid; gap: 0.25rem; }
+.w-eliza .el-steps code { font-family: var(--font-mono); word-break: break-word; }
+.w-eliza .el-tag { display: inline-block; min-width: 5.2rem; color: var(--ink-soft); font-family: var(--font-sans); }

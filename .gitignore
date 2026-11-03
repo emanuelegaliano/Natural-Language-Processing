@@ -1,0 +1,8 @@
+# appunti: si pubblicano i sorgenti LaTeX e i widget, non le slide del docente né il libro
+appunti/lezioni/
+appunti/out/
+appunti/.texweb/
+.DS_Store
+.venv/
+.python-version
+uv.lock

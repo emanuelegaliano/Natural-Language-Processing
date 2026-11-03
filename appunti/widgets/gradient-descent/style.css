@@ -1,0 +1,9 @@
+.w-gd .gd-axis { stroke: var(--ink-soft); stroke-width: 1; }
+.w-gd .gd-tick { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-soft); text-anchor: middle; }
+.w-gd .gd-tick.end { text-anchor: end; }
+.w-gd .gd-tick.start { text-anchor: start; }
+.w-gd .gd-curve { fill: none; stroke: var(--accent-soft); stroke-width: 2.5; }
+.w-gd .gd-trail { fill: none; stroke: var(--fig); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.w-gd .gd-dot { fill: var(--fig); opacity: 0.6; }
+.w-gd .gd-cur { fill: var(--hot); stroke: var(--surface); stroke-width: 2; transition: cx calc(0.45s / var(--speed, 1)), cy calc(0.45s / var(--speed, 1)); }
+.w-gd .gd-tangent { stroke: var(--obs); stroke-width: 2; }

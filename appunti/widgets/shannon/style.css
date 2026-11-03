@@ -1,0 +1,17 @@
+.w-shannon .sh-ctx { font-family: var(--font-serif); font-style: italic; font-size: 16px; fill: var(--ink); }
+.w-shannon .sh-seg { fill: color-mix(in oklab, var(--accent-soft) 18%, var(--surface)); stroke: var(--ink-soft); stroke-width: 1; transition: fill calc(0.35s / var(--speed, 1)); }
+.w-shannon .sh-seg.on { fill: color-mix(in oklab, var(--fig) 40%, var(--surface)); stroke: var(--fig); stroke-width: 1.6; }
+.w-shannon .sh-w { font-family: var(--font-mono); font-size: 13px; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+.w-shannon .sh-w.on { font-weight: 600; }
+.w-shannon .sh-tick { font-family: var(--font-mono); font-size: 12px; fill: var(--ink-soft); dominant-baseline: central; }
+.w-shannon .sh-tick.end { text-anchor: end; }
+.w-shannon .sh-needle { transition: transform calc(0.5s / var(--speed, 1)) ease; }
+.w-shannon .sh-needle line { stroke: var(--hot); stroke-width: 2.2; }
+.w-shannon .sh-r { font-family: var(--font-mono); font-size: 12px; fill: var(--hot); text-anchor: middle; }
+.w-shannon .sh-sent { display: flex; flex-wrap: wrap; gap: 0.3rem; justify-content: center; margin: 0.3rem 0 0.2rem; }
+.w-shannon .sh-tok {
+  font-family: var(--font-mono); font-size: 0.95rem; padding: 0.1rem 0.45rem; border-radius: 3px;
+  background: color-mix(in oklab, var(--accent-soft) 15%, var(--surface)); border: 1px solid color-mix(in oklab, var(--accent-soft) 45%, transparent);
+}
+.w-shannon .sh-tok.bos { color: var(--ink-soft); }
+.w-shannon .sh-tok.cur { background: color-mix(in oklab, var(--fig) 30%, var(--surface)); border-color: var(--fig); }

@@ -1,0 +1,363 @@
+\chapter{Normalizzazione del testo}\label{ch:normalizzazione}
+Qualsiasi task di NLP richiede una \textbf{normalizzazione del testo}, che consiste in tre operazioni:
+\begin{enumerate}
+    \item \textbf{tokenizzare} (segmentare) le parole;
+    \item \textbf{normalizzare} il formato delle parole;
+    \item \textbf{segmentare} le frasi.
+\end{enumerate}
+Prima di vederle una alla volta, conviene però mettersi d'accordo su cosa sia una parola, dato che la risposta è meno ovvia di quanto sembri. In questo capitolo seguiamo il capitolo 2 di \cite{jurafsky2026slp}.
+
+\section{Parole e corpora}\label{sec:parole}
+Quante parole ci sono in una frase? Consideriamo \enquote{Seuss's cat in the hat is different from other cats!}. Le parole \textit{cat} e \textit{cats} sono la stessa parola oppure no? Dipende da cosa intendiamo:
+\begin{itemize}
+    \item un \textbf{lemma} è un insieme di forme che hanno la stessa radice (stem), la stessa parte del discorso e, a grandi linee, lo stesso significato: \textit{cat} e \textit{cats} hanno lo stesso lemma;
+    \item una \textbf{wordform} è invece la forma flessa completa, così come compare nel testo: \textit{cat} e \textit{cats} sono due wordform diverse.
+\end{itemize}
+
+Una seconda distinzione riguarda il conteggio. Un \textbf{word type} è un elemento del vocabolario, mentre un \textbf{word token} è una sua istanza nel testo\footnote{Il libro di testo parla di \textit{word instance} al posto di word token, e riserva il termine \textit{token} all'output degli algoritmi di tokenizzazione in sottoparole che vedremo nella sezione~\ref{sec:bpe}.}. La frase
+\begin{center}
+\textit{they lay back on the San Francisco grass and looked at the stars and their}
+\end{center}
+contiene 15 token e 13 type, dato che \textit{the} e \textit{and} compaiono due volte. Se però consideriamo \textit{San Francisco} come un'unica parola, i token diventano 14 e i type 12, e con scelte ancora diverse (ad esempio raggruppando forme diverse della stessa parola) i type potrebbero scendere ancora. Anche una domanda così semplice, quindi, ha una risposta che dipende dal task.
+
+\paragraph{Quante parole in un corpus?} Indichiamo con $N$ il numero di token e con $V$ il \textbf{vocabolario}, ovvero l'insieme dei type, per cui $|V|$ è la dimensione del vocabolario (il numero di wordform distinte). La relazione tra le due quantità è descritta dalla \textbf{legge di Heaps} (o legge di Herdan):
+\begin{equation}
+|V| = k N^\beta
+\end{equation}
+dove $k$ e $\beta$ sono costanti positive, con $0 < \beta < 1$. Le slide riportano valori tipici di $\beta$ tra $0.67$ e $0.75$, mentre il libro riporta valori tra $0.44$ e $0.56$, o anche più alti: il valore dipende dalla dimensione del corpus e dal genere. In entrambi i casi la conclusione è la stessa, ovvero il vocabolario cresce un po' più velocemente della radice quadrata del numero di token (tabella~\ref{tab:corpora}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Corpus & Token $= N$ & Type $= |V|$ \\
+\midrule
+Conversazioni telefoniche Switchboard & 2.4 milioni & 20 mila \\
+Shakespeare & 884 mila & 31 mila \\
+COCA & 440 milioni & 2 milioni \\
+Google N-grams & 1000 miliardi & più di 13 milioni \\
+\bottomrule
+\end{tabular}
+\caption{Numero di token e di type in alcuni corpora inglesi: più il corpus è grande, più type troviamo.}
+\label{tab:corpora}
+\end{table}
+
+Il fatto che il vocabolario cresca senza fermarsi ha una conseguenza pratica: per quanto grande sia il vocabolario di un modello, prima o poi il modello incontrerà parole che non ha mai visto, le cosiddette \textbf{parole sconosciute}. È uno dei motivi per cui i modelli moderni non lavorano su parole intere ma su sottoparole, come vedremo nella sezione~\ref{sec:bpe}.
+
+\subsection{Corpora}
+Le parole non compaiono dal nulla. Un testo è prodotto da uno o più autori specifici, in un momento specifico, in una specifica varietà di una specifica lingua, e per una specifica funzione. I corpora variano quindi lungo diverse dimensioni:
+\begin{itemize}
+    \item \textbf{Lingua}: nel mondo si parlano 7097 lingue, ed è opportuno testare gli algoritmi su più di una, mentre c'è la tendenza a svilupparli solo per l'inglese.
+    \item \textbf{Varietà}: ad esempio le varietà dell'African American English, in cui un post su Twitter può contenere forme come \textit{iont} (\textit{I don't}), che influenzano la segmentazione in parole.
+    \item \textbf{Code switching}: l'uso di più lingue nella stessa frase, come in \enquote{Por primera vez veo a @username actually being hateful! It was beautiful :)}, in spagnolo e inglese.
+    \item \textbf{Genere}: articoli di giornale, narrativa, articoli scientifici, Wikipedia.
+    \item \textbf{Caratteristiche demografiche degli autori}: età, genere, etnia, condizione socio-economica.
+\end{itemize}
+
+Per questo motivo chi costruisce un corpus dovrebbe documentarlo con un \textbf{datasheet} \cite{gebru2020datasheets} (o \textit{data statement} \cite{bender2018datastatements}), che risponde a domande come: perché è stato raccolto il corpus, da chi e con quali finanziamenti (\textbf{motivazione})? In quale situazione è stato scritto il testo (\textbf{situazione})? Se è un sottoinsieme, come è stato campionato, c'era il consenso degli autori, che pre-processing è stato applicato (\textbf{processo di raccolta})? A queste si aggiungono il processo di annotazione, la varietà linguistica e le caratteristiche demografiche di autori e annotatori.
+
+\section{Tokenizzazione delle parole}
+Il modo più semplice per tokenizzare un testo è la \textbf{tokenizzazione basata sugli spazi}: un token è tutto ciò che si trova tra due spazi. Funziona per le lingue che separano le parole con gli spazi, ovvero quelle scritte con sistemi di scrittura basati sugli alfabeti arabo, cirillico, greco, latino e così via.
+
+\subsection{Tokenizzare con gli strumenti UNIX}
+Per l'inglese possiamo tokenizzare un testo e contare le frequenze delle parole con una sola riga di comando, usando \texttt{sed} (o \texttt{tr}) per spezzare il testo e \texttt{sort} e \texttt{uniq} per contare:
+\begin{lstlisting}[style=sh]
+cat shakespeare.txt | sed -r 's/[^A-Za-z]+/\n/g' | sed '/^$/d' \
+    | sort | uniq -c | sort -n -r
+\end{lstlisting}
+I comandi, collegati da una pipe, fanno nell'ordine (figura~\ref{fig:unix-pipeline}):
+\begin{enumerate}
+    \item \verb|sed -r 's/[^A-Za-z]+/\n/g'| trasforma ogni sequenza di caratteri non alfabetici in un a capo, così che ogni riga contenga una parola: sull'intero Shakespeare si ottiene \textit{This}, \textit{is}, \textit{the}, \textit{th}, \textit{Etext}, \textit{file}, \textit{presented}, \dots;
+    \item \verb|sed '/^$/d'| elimina le righe vuote;
+    \item \verb|sort| ordina le righe in ordine alfabetico, per cui le parole uguali finiscono una sotto l'altra (all'inizio, una lunga serie di \textit{A});
+    \item \verb|uniq -c| fonde le righe uguali adiacenti e conta quante sono, quindi ogni riga diventa un type con la sua frequenza;
+    \item \verb|sort -n -r| ordina in ordine numerico decrescente.
+\end{enumerate}
+Il risultato mette in cima le parole più frequenti, che in Shakespeare, come in qualsiasi corpus, sono le parole funzionali brevi: \textit{the} (23288 volte), \textit{I} (22225), \textit{and} (18653), \textit{to} (16373), \textit{of} (15725), \textit{a}, \textit{you}, \textit{my}, \textit{in}. Il libro ottiene lo stesso risultato con \verb|tr -sc 'A-Za-z' '\n'|, che sostituisce (\texttt{-c}, complemento) ogni carattere non alfabetico con un a capo e fonde (\texttt{-s}, squeeze) gli a capo consecutivi\footnote{Aggiungendo \texttt{tr A-Z a-z} prima del primo \texttt{sort} si porta tutto in minuscolo, e \textit{The} e \textit{the} vengono contati insieme: è il case folding della sezione~\ref{sec:case-folding}.}.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{unix-pipeline}
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  cmd/.style={font=\small\ttfamily, anchor=west},
+  ann/.style={fill=ObsColor!25, font=\scriptsize, anchor=west, inner sep=2.5pt}]
+  \node[cmd] at (0,0) {cat sonnet.txt};
+  \foreach \c/\a [count=\i] in {
+      {sed -r 's/[\textasciicircum A-Za-z]+/\textbackslash n/g'}/{ogni sequenza non alfabetica diventa un a capo},
+      {sed '/\textasciicircum\$/d'}/{elimina le righe vuote},
+      {sort}/{ordina in ordine alfabetico},
+      {uniq -c}/{fonde le righe uguali e le conta},
+      {sort -n -r}/{ordina per frequenza decrescente}} {
+    \node[cmd] (c\i) at (0.4,-0.55*\i) {| \c};
+    \node[ann] at (6.3,-0.55*\i) {\a};
+  }
+  \draw[->, thick, TextGray] (5.95,-0.25) -- (5.95,-2.9);
+  \node[draw=RuleGray, fill=white, anchor=north west, align=left, font=\scriptsize\ttfamily, inner sep=4pt] at (0.4,-3.25)
+    {2 summer\quad 2 s\quad 2 more\quad 2 a\quad 1 winds\quad 1 too\quad 1 to\quad 1 thee\quad 1 the\quad \dots\\
+     31 type su 35 token};
+\end{tikzpicture}
+\end{widget}
+\caption{La pipeline UNIX per contare le parole di un testo, applicata ai primi quattro versi del sonetto 18 di Shakespeare (\enquote{Shall I compare thee to a summer's day? \dots}). Ogni comando riceve l'output del precedente, e in fondo restano i type ordinati per frequenza: \textit{summer}, \textit{s}, \textit{more} e \textit{a} compaiono due volte, tutti gli altri una.}
+\label{fig:unix-pipeline}
+\end{figure}
+
+\subsection{Problemi della tokenizzazione}
+Strumenti così semplici bastano per una statistica veloce, ma non possiamo limitarci a eliminare spazi e punteggiatura alla cieca. Ci sono infatti diversi casi da gestire:
+\begin{itemize}
+    \item la punteggiatura interna alle parole, come in \textit{m.p.h.}, \textit{Ph.D.}, \textit{AT\&T} e \textit{cap'n};
+    \item i prezzi (\textit{\$45.55}), che non vogliamo spezzare in \textit{45} e \textit{55}, e le date (\textit{01/02/06});
+    \item gli URL (\url{http://www.stanford.edu}), gli hashtag (\textit{\#nlproc}) e gli indirizzi email (\textit{someone@cs.colorado.edu});
+    \item i \textbf{clitici}, ovvero parti di parola che non possono stare da sole, come \textit{are} in \textit{we're}, il francese \textit{je} in \textit{j'ai} e \textit{le} in \textit{l'honneur};
+    \item le \textbf{multiword expression} (MWE), come \textit{New York} o \textit{rock 'n' roll}, per cui bisogna decidere se trattarle come un'unica parola.
+\end{itemize}
+Un tokenizzatore basato su regole decide come trattare ciascuno di questi casi. Uno degli standard più usati è quello del \textbf{Penn Treebank}, che separa i clitici (\textit{doesn't} diventa \textit{does} e \textit{n't}), tiene insieme le parole con il trattino e separa tutta la punteggiatura. I modelli di linguaggio moderni, invece, usano spesso la tokenizzazione in sottoparole, in cui ad esempio \textit{looking} può diventare \textit{look} e \textit{-ing}.
+
+\subsection{Tokenizzare con NLTK}
+Visto che la tokenizzazione viene eseguita prima di qualsiasi altra elaborazione, deve essere molto veloce. Per questo si usano algoritmi deterministici basati su espressioni regolari. La libreria NLTK \cite{bird2009nltk}, ad esempio, ha la funzione \texttt{regexp\_tokenize}, che riceve il pattern dei token come espressione regolare:
+\begin{lstlisting}[style=py]
+>>> text = 'That U.S.A. poster-print costs $12.40...'
+>>> pattern = r'''(?x)     # set flag to strip out spaces and comments
+...     (?:[A-Z]\.)+       # abbreviations, e.g. U.S.A.
+...   | \w+(?:-\w+)*       # words with optional internal hyphens
+...   | \$?\d+(?:\.\d+)?%? # currency and percentages, e.g. $12.40, 82%
+...   | \.\.\.             # ellipsis
+...   | [][.,;"'?():-_`]   # these are separate tokens; includes ], [
+... '''
+>>> nltk.regexp_tokenize(text, pattern, gaps=False)
+['That', 'U.S.A.', 'poster-print', 'costs', '$12.40', '...']
+\end{lstlisting}
+Il flag \verb|(?x)| permette di scrivere il pattern su più righe con i commenti. Ogni alternativa del pattern corrisponde a un tipo di token: le abbreviazioni, le parole con trattini interni, i prezzi e le percentuali, i puntini di sospensione e la punteggiatura.
+
+Più in generale, in NLTK la funzione \texttt{word\_tokenize()} usa il tokenizzatore migliore per la lingua indicata (di default l'inglese). I tokenizzatori sono organizzati in una gerarchia di classi che parte da \texttt{TokenizerI}, con i metodi \texttt{tokenize} e \texttt{span\_tokenize}:
+\begin{itemize}
+    \item \textbf{TreebankWordTokenizer}: tokenizza secondo lo standard del Penn Treebank;
+    \item \textbf{RegexpTokenizer}: usa un'espressione regolare, come nell'esempio;
+    \item \textbf{WordPunctTokenizer}: usa l'espressione regolare \verb!\w+|[^\w\s]+!, quindi separa le sequenze alfanumeriche dalla punteggiatura;
+    \item \textbf{WhitespaceTokenizer}: separa sugli spazi, le tabulazioni e gli a capo.
+\end{itemize}
+
+\subsection{Lingue senza spazi}
+Molte lingue, come il cinese, il giapponese e il thai, non usano gli spazi per separare le parole. Come decidiamo allora dove finisce un token? In cinese le parole sono composte da caratteri chiamati \textbf{hanzi}, ognuno dei quali rappresenta un'unità di significato (un \textbf{morfema}, che definiremo nella sezione~\ref{sec:bpe}), e ogni parola ne contiene in media 2.4. Decidere cosa conti come parola, però, è complesso e non c'è un accordo. La frase \enquote{Yao Ming reaches the finals} della figura~\ref{fig:cinese}, ad esempio, può essere segmentata in tre parole, in cinque parole o in sette caratteri.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, font=\small,
+  zh/.style={tok, font=\normalsize, minimum height=6.5mm, minimum width=11mm, inner xsep=4pt},
+  gl/.style={font=\scriptsize\itshape, color=TextGray, anchor=north}]
+  \newcommand{\seg}[3]{% y, etichetta, lista testo/glossa
+    \node[anchor=east, font=\small] at (-0.3,#1) {#2};
+    \node[inner sep=0, anchor=west] (s0) at (0,#1) {};
+    \foreach \z/\g [count=\i] in {#3} {
+      \pgfmathtruncatemacro{\j}{\i-1}
+      \node[zh, anchor=west] (s\i) at ([xshift=4pt]s\j.east) {\begin{CJK}{UTF8}{gbsn}\z\end{CJK}};
+      \node[gl] at (s\i.south) {\g};
+    }}
+  \seg{0}{3 parole}{姚明/YaoMing, 进入/reaches, 总决赛/finals}
+  \seg{-1.35}{5 parole}{姚/Yao, 明/Ming, 进入/reaches, 总/overall, 决赛/finals}
+  \seg{-2.7}{7 caratteri}{姚/Yao, 明/Ming, 进/enter, 入/enter, 总/overall, 决/decision, 赛/game}
+\end{tikzpicture}
+\caption{Tre segmentazioni possibili della frase cinese \enquote{Yao Ming reaches the finals}: con lo standard del Chinese Treebank i nomi propri sono un'unica parola (3 parole), con lo standard della Peking University nome e cognome sono separati, così come alcuni aggettivi (5 parole), oppure si rinuncia alle parole e si usano i singoli caratteri (7 token).}
+\label{fig:cinese}
+\end{figure}
+
+In cinese è comune trattare semplicemente ogni carattere come un token, e la segmentazione diventa banale: i caratteri sono infatti a un livello semantico ragionevole per la maggior parte delle applicazioni. In altre lingue, come il thai e il giapponese, il singolo carattere è un'unità troppo piccola e serve una segmentazione più complessa. Gli algoritmi standard sono in questo caso modelli neurali per sequenze, addestrati in modo supervisionato.
+
+\section{Tokenizzazione in sottoparole}\label{sec:bpe}
+Invece di segmentare sugli spazi o sui singoli caratteri, possiamo lasciare che siano i dati a dirci come tokenizzare. Si parla di \textbf{tokenizzazione in sottoparole} (subword tokenization), perché i token possono essere sia parole intere sia parti di parole. Il vantaggio principale riguarda le parole sconosciute: se nel training abbiamo visto \textit{low}, \textit{new} e \textit{newer} ma non \textit{lower}, quando \textit{lower} compare nel test possiamo comunque rappresentarla con due sottoparole note, \textit{low} ed \textit{er}. Nel caso peggiore, una parola molto rara può essere rappresentata come una sequenza di singoli caratteri.
+
+Gli algoritmi più diffusi sono tre: il \textbf{Byte-Pair Encoding} (BPE) \cite{sennrich2016bpe}, la tokenizzazione basata su un \textbf{unigram language model} \cite{kudo2018unigram} e \textbf{WordPiece} \cite{schuster2012wordpiece}. Tutti hanno due parti:
+\begin{itemize}
+    \item un \textbf{token learner}, che riceve un corpus di training e ne induce un vocabolario, ovvero un insieme di token distinti;
+    \item un \textbf{token segmenter}, che riceve una frase di test e la tokenizza secondo quel vocabolario.
+\end{itemize}
+
+\subsection{Il token learner di BPE}
+Il token learner di BPE parte da un vocabolario che contiene tutti i singoli caratteri del corpus, $\{A, B, C, D, \dots, a, b, c, d, \dots\}$, e ripete i passi seguenti:
+\begin{enumerate}
+    \item sceglie i due simboli che compaiono più spesso uno accanto all'altro nel corpus, ad esempio \texttt{A} e \texttt{B};
+    \item aggiunge al vocabolario il nuovo simbolo \texttt{AB};
+    \item sostituisce nel corpus ogni coppia adiacente \texttt{A B} con \texttt{AB}.
+\end{enumerate}
+L'algoritmo si ferma dopo $k$ merge, per cui $k$ è un suo parametro, e il vocabolario finale contiene i caratteri iniziali più $k$ nuovi simboli (algoritmo~\ref{alg:bpe}).
+
+\begin{algorithm}[htbp]
+\caption{Il token learner di BPE.}
+\label{alg:bpe}
+\begin{algorithmic}[1]
+\Function{BytePairEncoding}{stringhe $C$, numero di merge $k$}
+  \State $V \gets$ tutti i caratteri distinti di $C$ \Comment{i token iniziali sono i caratteri}
+  \For{$i = 1$ to $k$} \Comment{$k$ merge}
+    \State $t_L, t_R \gets$ coppia di token adiacenti più frequente in $C$
+    \State $t_{NEW} \gets t_L + t_R$ \Comment{il nuovo token è la concatenazione}
+    \State $V \gets V + t_{NEW}$ \Comment{aggiorna il vocabolario}
+    \State sostituisci ogni occorrenza di $t_L, t_R$ in $C$ con $t_{NEW}$ \Comment{aggiorna il corpus}
+  \EndFor
+  \State \Return $V$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+In pratica, BPE viene eseguito solo dentro le parole: i merge non attraversano mai il confine tra due parole. Per questo si aggiunge prima un simbolo speciale di fine parola \texttt{\_} prima di ogni spazio, e poi si separa ogni parola nei suoi caratteri\footnote{Il libro di testo usa una convenzione diversa, più vicina a quella dei modelli di linguaggio: lo spazio viene attaccato all'inizio della parola successiva. Il testo viene prima pre-tokenizzato con un'espressione regolare, separandolo su spazi e punteggiatura, e i merge sono permessi solo dentro i pezzi così ottenuti.}. Forniamo il seguente esempio, che seguiremo per tutta la sezione. Il corpus di training è:
+\begin{center}
+\textit{low low low low low lowest lowest newer newer newer newer newer newer wider wider wider new new}
+\end{center}
+Aggiungendo i simboli di fine parola e contando le parole uguali, la sua rappresentazione e il vocabolario iniziale sono:
+\begin{center}
+\begin{tabular}{rl@{\qquad}l}
+\toprule
+\multicolumn{2}{l}{corpus} & vocabolario \\
+\midrule
+5 & \texttt{l o w \_} & \texttt{\_, d, e, i, l, n, o, r, s, t, w} \\
+2 & \texttt{l o w e s t \_} & \\
+6 & \texttt{n e w e r \_} & \\
+3 & \texttt{w i d e r \_} & \\
+2 & \texttt{n e w \_} & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La coppia adiacente più frequente è \texttt{e r}, che compare in \textit{newer} (6 volte) e in \textit{wider} (3 volte), quindi 9 volte in tutto\footnote{Anche \texttt{r \_} compare 9 volte: a parità di frequenza si sceglie la coppia incontrata per prima scorrendo il corpus.}. La uniamo in \texttt{er}, la aggiungiamo al vocabolario e la sostituiamo nel corpus, che diventa \texttt{n e w er \_} e \texttt{w i d er \_}. A questo punto la coppia più frequente è \texttt{er \_} (9 volte), che diventa \texttt{er\_}, poi \texttt{n e} (8 volte), che diventa \texttt{ne}. I merge successivi sono:
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Merge & Token aggiunti al vocabolario (oltre ai caratteri iniziali) \\
+\midrule
+\texttt{(ne, w)} & \texttt{er, er\_, ne, new} \\
+\texttt{(l, o)} & \texttt{er, er\_, ne, new, lo} \\
+\texttt{(lo, w)} & \texttt{er, er\_, ne, new, lo, low} \\
+\texttt{(new, er\_)} & \texttt{er, er\_, ne, new, lo, low, newer\_} \\
+\texttt{(low, \_)} & \texttt{er, er\_, ne, new, lo, low, newer\_, low\_} \\
+\bottomrule
+\end{tabular}
+\end{center}
+La figura~\ref{fig:bpe} riassume gli otto merge e lo stato finale del corpus.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{bpe}[words={low, lowest, newer, wider, new}, counts={5, 2, 6, 3, 2}, merges=8, test=lower]
+\begin{tikzpicture}[nlp, font=\small,
+  sym/.style={tok, minimum width=4mm, inner xsep=2pt, font=\scriptsize\ttfamily},
+  nw/.style={sym, draw=FigColor, fill=FigColor!20},
+  cnt/.style={font=\scriptsize\ttfamily, color=TextGray, anchor=east}]
+  \newcommand{\parola}[3]{% y, frequenza, simboli
+    \node[cnt] at (-0.15,#1) {#2};
+    \node[inner sep=0, anchor=west] (p0) at (0,#1) {};
+    \foreach \s/\st [count=\i] in {#3} {
+      \pgfmathtruncatemacro{\j}{\i-1}
+      \node[\st, anchor=west] (p\i) at ([xshift=2pt]p\j.east) {\strut\s};
+    }}
+  % corpus iniziale
+  \node[lab, anchor=west] at (-0.4,0.6) {corpus iniziale};
+  \parola{0}{5}{l/sym, o/sym, w/sym, \_/sym}
+  \parola{-0.55}{2}{l/sym, o/sym, w/sym, e/sym, s/sym, t/sym, \_/sym}
+  \parola{-1.1}{6}{n/sym, e/sym, w/sym, e/sym, r/sym, \_/sym}
+  \parola{-1.65}{3}{w/sym, i/sym, d/sym, e/sym, r/sym, \_/sym}
+  \parola{-2.2}{2}{n/sym, e/sym, w/sym, \_/sym}
+  % merge
+  \begin{scope}[xshift=4.6cm]
+    \node[lab, anchor=west] at (-0.2,0.6) {merge appresi (frequenza)};
+    \foreach \m/\f [count=\i] in {e r/9, er \_/9, n e/8, ne w/8, l o/7, lo w/7, new er\_/6, low \_/5}
+      \node[anchor=west, font=\scriptsize\ttfamily] at (0,0.2-0.33*\i) {\i.\ \m\ \ (\f)};
+  \end{scope}
+  % corpus finale
+  \begin{scope}[xshift=8.4cm]
+    \node[lab, anchor=west] at (-0.4,0.6) {corpus dopo 8 merge};
+    \parola{0}{5}{low\_/nw}
+    \parola{-0.55}{2}{low/nw, e/sym, s/sym, t/sym, \_/sym}
+    \parola{-1.1}{6}{newer\_/nw}
+    \parola{-1.65}{3}{w/sym, i/sym, d/sym, er\_/nw}
+    \parola{-2.2}{2}{new/nw, \_/sym}
+  \end{scope}
+  % segmenter
+  \node[lab, anchor=west] at (-0.4,-3.0) {token segmenter:};
+  \node[anchor=west, font=\scriptsize\ttfamily] at (1.9,-3.0) {n e w e r \_ $\to$};
+  \node[inner sep=0, anchor=west] (p0) at (4.15,-3.0) {};
+  \node[nw, anchor=west] at (p0.east) {\strut newer\_};
+  \node[anchor=west, font=\scriptsize\ttfamily] at (6.0,-3.0) {l o w e r \_ $\to$};
+  \node[nw, anchor=west] (a) at (8.25,-3.0) {\strut low};
+  \node[nw, anchor=west] at ([xshift=2pt]a.east) {\strut er\_};
+\end{tikzpicture}
+\end{widget}
+\caption{Gli otto merge appresi da BPE sul corpus dell'esempio: a sinistra il corpus di partenza, al centro i merge in ordine con la loro frequenza, a destra il corpus finale, con i token nuovi evidenziati. In basso, il token segmenter applica gli stessi merge a due parole di test: \textit{newer} è un token unico, mentre \textit{lower}, mai vista nel training, diventa \texttt{low} ed \texttt{er\_}.}
+\label{fig:bpe}
+\end{figure}
+
+\subsection{Il token segmenter di BPE}
+Sui dati di test il segmenter applica i merge appresi dal training, \textbf{nell'ordine in cui sono stati appresi}, mentre le frequenze nei dati di test non hanno alcun ruolo. Torniamo al nostro esempio: prima si sostituisce ogni \texttt{e r} con \texttt{er}, poi ogni \texttt{er \_} con \texttt{er\_}, e così via. La parola di test \texttt{n e w e r \_} diventa quindi un unico token, \texttt{newer\_}, mentre \texttt{l o w e r \_} diventa due token, \texttt{low} ed \texttt{er\_}. Nei casi reali BPE viene eseguito con decine di migliaia di merge su corpora molto grandi, e produce vocabolari di 50, 100 o anche 200 mila token: la maggior parte delle parole è rappresentata da un unico token, e solo le parole rare (e quelle sconosciute) vengono spezzate in più token.
+
+\subsection{Proprietà dei token BPE}
+I token prodotti da BPE contengono di solito le parole frequenti e le sottoparole frequenti, che spesso sono \textbf{morfemi} come \textit{-est} o \textit{-er}. Un morfema è la più piccola unità dotata di significato di una lingua: ad esempio \textit{unlikeliest} ha tre morfemi, \textit{un-}, \textit{likely} e \textit{-est}. Nel nostro esempio, BPE ha imparato da solo che \textit{er\_} è un pezzo ricorrente a fine parola, senza che nessuno gli abbia spiegato cosa sia un comparativo.
+
+\section{Normalizzazione delle parole}
+La \textbf{normalizzazione delle parole} consiste nel portare parole e token in un formato standard. Ad esempio \textit{U.S.A.} e \textit{USA} dovrebbero essere la stessa parola, così come \textit{uhhuh} e \textit{uh-huh}. Con scelte più aggressive possiamo ricondurre alla stessa forma anche \textit{am}, \textit{is}, \textit{be} e \textit{are}, oppure, in italiano, \textit{vado}, \textit{andate} e \textit{andare}.
+
+\subsection{Case folding}\label{sec:case-folding}
+Il \textbf{case folding} riduce tutte le lettere al minuscolo. In applicazioni come l'information retrieval è la scelta più comune, visto che gli utenti tendono a scrivere in minuscolo. Una possibile eccezione sono le maiuscole a metà frase, come in \textit{General Motors}, \textit{Fed} (la Federal Reserve) contro \textit{fed} e \textit{SAIL} contro \textit{sail}. Per altri task, come la sentiment analysis, la traduzione automatica e l'information extraction, le maiuscole sono invece un'informazione utile: \textit{US} (gli Stati Uniti) e \textit{us} (il pronome) sono parole diverse.
+
+\subsection{Lemmatizzazione}
+La \textbf{lemmatizzazione} rappresenta ogni parola con il suo \textbf{lemma}, ovvero la radice comune, che coincide con la forma che troveremmo in un dizionario:
+\begin{itemize}
+    \item \textit{am}, \textit{are}, \textit{is} $\to$ \textit{be};
+    \item \textit{car}, \textit{cars}, \textit{car's}, \textit{cars'} $\to$ \textit{car};
+    \item lo spagnolo \textit{quiero} (\enquote{voglio}) e \textit{quieres} (\enquote{vuoi}) $\to$ \textit{querer} (\enquote{volere});
+    \item \textit{He is reading detective stories} $\to$ \textit{He be read detective story}.
+\end{itemize}
+
+La lemmatizzazione si fa con il \textbf{parsing morfologico}. Le parole sono fatte di \textbf{morfemi}, che si dividono in due classi: gli \textbf{stem}, che portano il significato principale, e gli \textbf{affissi}, che si attaccano agli stem e hanno spesso una funzione grammaticale. Un parser morfologico scompone \textit{cats} nei due morfemi \textit{cat} e \textit{s}, e l'italiano \textit{ameranno} nel morfema \textit{amare} più le feature morfologiche \texttt{3PL} (terza persona plurale) e futuro.
+
+\subsection{Stemming}
+Lo \textbf{stemming} è una versione più grezza della lemmatizzazione: riduce i termini ai loro stem tagliando gli affissi in modo approssimativo, senza alcuna analisi. Ad esempio il testo
+\begin{quote}
+\textit{This was not the map we found in Billy Bones's chest, but an accurate copy, complete in all things-names and heights and soundings-with the single exception of the red crosses and the written notes.}
+\end{quote}
+diventa:
+\begin{quote}
+\textit{Thi wa not the map we found in Billi Bone s chest but an accur copi complet in all thing name and height and sound with the singl except of the red cross and the written note}
+\end{quote}
+Il risultato non è leggibile, ma forme diverse della stessa parola finiscono sulla stessa forma: \textit{crosses} diventa \textit{cross} e \textit{notes} diventa \textit{note}.
+
+Lo stemmer più noto è il \textbf{Porter stemmer} \cite{porter1980}, basato su una serie di regole di riscrittura eseguite in cascata: l'output di ogni passo diventa l'input del successivo. Alcune regole di esempio sono:
+\begin{center}
+\begin{tabular}{rcll}
+\texttt{ATIONAL} & $\to$ & \texttt{ATE} & (\textit{relational} $\to$ \textit{relate}) \\
+\texttt{ING} & $\to$ & $\epsilon$ & se lo stem contiene una vocale (\textit{motoring} $\to$ \textit{motor}) \\
+\texttt{SSES} & $\to$ & \texttt{SS} & (\textit{grasses} $\to$ \textit{grass}) \\
+\end{tabular}
+\end{center}
+
+Per molte lingue, però, gestire una morfologia complessa è necessario e regole così semplici non bastano. Pensiamo alla parola turca \textit{Uygarlastiramadiklarimizdanmissinizcasina}, che significa \enquote{(comportandovi) come se foste tra quelli che non siamo riusciti a civilizzare}. È composta da undici morfemi: \textit{Uygar} (civilizzato), \textit{las} (diventare), \textit{tir} (causare), \textit{ama} (non essere in grado), \textit{dik} (passato), \textit{lar} (plurale), \textit{imiz} (prima persona plurale), \textit{dan} (ablativo), \textit{mis} (passato), \textit{siniz} (seconda persona plurale), \textit{casina} (come se).
+
+\subsection{Lemmatizzare con spaCy}
+In pratica, la lemmatizzazione si fa con librerie come \textbf{spaCy}, le cui pipeline per l'inglese includono un lemmatizzatore basato su regole:
+\begin{lstlisting}[style=py]
+import spacy
+
+# English pipelines include a rule-based lemmatizer
+nlp = spacy.load("en_core_web_sm")
+lemmatizer = nlp.get_pipe("lemmatizer")
+print(lemmatizer.mode)  # 'rule'
+
+doc = nlp("I was reading the paper.")
+print([token.lemma_ for token in doc])
+# ['I', 'be', 'read', 'the', 'paper', '.']
+\end{lstlisting}
+Ogni token del documento ha l'attributo \texttt{lemma\_} con il suo lemma, e allo stesso modo spaCy fornisce le feature morfologiche di ogni token\footnote{La documentazione di spaCy su lemmatizzazione e morfologia è in \url{https://spacy.io/usage/linguistic-features}.}.
+
+\section{Segmentazione delle frasi}
+L'ultima operazione della normalizzazione è la \textbf{segmentazione delle frasi}. Il punto esclamativo e il punto interrogativo sono segnali di fine frase quasi sempre non ambigui. Il punto, invece, è molto ambiguo, perché può indicare:
+\begin{itemize}
+    \item la fine di una frase;
+    \item un'abbreviazione, come \textit{Inc.} o \textit{Dr.};
+    \item un numero, come \textit{.02\%} o \textit{4.3}.
+\end{itemize}
+I casi possono anche sovrapporsi: in \enquote{\dots he works for Apple Inc.} il punto finale chiude sia l'abbreviazione sia la frase. Per questo la tokenizzazione delle parole e quella delle frasi vengono spesso affrontate insieme. L'algoritmo più comune è quindi tokenizzare prima, e poi usare delle regole o un modello di machine learning per classificare ogni punto come parte della parola oppure come confine di frase. Un dizionario delle abbreviazioni aiuta, e a quel punto la segmentazione in frasi si può fare spesso con semplici regole basate sulla tokenizzazione.
+
+In NLTK la segmentazione si fa con la funzione \texttt{nltk.sent\_tokenize()}, oppure con la classe \texttt{PunktSentenceTokenizer}, che può essere addestrata su un corpus specifico, ad esempio il file \texttt{overheard.txt} del corpus \texttt{webtext}:
+\begin{lstlisting}[style=py]
+from nltk.corpus import webtext
+from nltk.tokenize import PunktSentenceTokenizer
+
+t = PunktSentenceTokenizer(webtext.raw('overheard.txt'))
+t.tokenize('First sentence. Second sentence')
+\end{lstlisting}

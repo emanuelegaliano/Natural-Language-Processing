@@ -1,0 +1,546 @@
+\chapter{Naive Bayes e classificazione del testo}\label{ch:nb}
+La \textbf{classificazione del testo} consiste nell'assegnare a un testo una classe scelta da un insieme prestabilito. Alcuni esempi:
+\begin{itemize}
+    \item \textbf{Questa email è spam?}
+    \item \textbf{Chi ha scritto i Federalist Papers?} Tra il 1787 e il 1788 Jay, Madison e Hamilton scrissero in forma anonima una serie di saggi per convincere lo stato di New York a ratificare la Costituzione americana. L'attribuzione di 12 di questi saggi è rimasta incerta fino al 1963, quando Mosteller e Wallace \cite{mosteller1963} la risolsero con metodi bayesiani.
+    \item \textbf{Di cosa parla questo articolo medico?} Si tratta di assegnargli una categoria della gerarchia MeSH (Medical Subject Headings), come \textit{Blood Supply}, \textit{Chemistry}, \textit{Drug Therapy} o \textit{Epidemiology}.
+    \item \textbf{Questa recensione è positiva o negativa?} \enquote{\dots zany characters and richly applied satire, and some great plot twists} è positiva, \enquote{It was pathetic. The worst part about it was the boxing scenes\dots} è negativa.
+\end{itemize}
+L'ultimo è un esempio di \textbf{sentiment analysis}, che useremo come esempio guida per tutto il capitolo, seguendo l'appendice B di \cite{jurafsky2026slp}. Le applicazioni sono molte: capire se la recensione di un film è positiva o negativa, cosa pensano le persone di un prodotto o come varia la fiducia dei consumatori. Si può anche capire cosa pensano gli elettori di un candidato, fino a predire l'esito di un'elezione o l'andamento del mercato.
+
+\paragraph{Stati affettivi.} Secondo la tipologia di Scherer \cite{scherer2000}, gli stati affettivi sono di diversi tipi:
+\begin{itemize}
+    \item \textbf{Emozioni}: reazioni brevi e sincronizzate alla valutazione di un evento importante (arrabbiato, triste, gioioso, impaurito, orgoglioso).
+    \item \textbf{Umori}: cambiamenti diffusi, senza una causa precisa, di bassa intensità e lunga durata (allegro, cupo, irritabile, depresso).
+    \item \textbf{Atteggiamenti interpersonali}: l'atteggiamento verso un'altra persona in una specifica interazione (amichevole, distante, freddo, caloroso, sprezzante).
+    \item \textbf{Attitudini}: convinzioni durature e affettivamente connotate verso oggetti o persone (gradire, amare, odiare, apprezzare, desiderare).
+    \item \textbf{Tratti della personalità}: disposizioni stabili e comportamenti tipici (nervoso, ansioso, sconsiderato, ostile, geloso).
+\end{itemize}
+La sentiment analysis è il rilevamento delle \textbf{attitudini}. Nel caso più semplice, che è quello di questo capitolo, ci chiediamo solo se l'attitudine espressa in un testo è positiva o negativa. Oltre alla sentiment analysis, la classificazione del testo comprende la spam detection, l'attribuzione dell'autore, l'identificazione della lingua e l'assegnazione di categorie, argomenti o generi.
+
+\section{Classificazione del testo}
+Formalmente, il problema è questo:
+\begin{itemize}
+    \item \textbf{Input}: un documento $d$ e un insieme fissato di classi $C = \{c_1, c_2, \dots, c_J\}$.
+    \item \textbf{Output}: una classe predetta $c \in C$.
+\end{itemize}
+Il primo metodo possibile sono le \textbf{regole scritte a mano}, basate su combinazioni di parole o di altre feature. Ad esempio, per lo spam: \textit{indirizzo in blacklist} OR (\enquote{dollars} AND \enquote{you have been selected}). L'accuratezza può essere alta, se le regole vengono raffinate con cura da un esperto, ma costruirle e mantenerle è costoso, e sono fragili quando i dati cambiano nel tempo.
+
+Il metodo più comune è invece il \textbf{machine learning supervisionato}. In questo caso l'input comprende, oltre all'insieme di classi $C$, un training set di $m$ documenti etichettati a mano $(d_1, c_1), \dots, (d_m, c_m)$, e l'output è un classificatore appreso $\gamma: d \to c$. Si può usare qualsiasi tipo di classificatore: Naive Bayes, regressione logistica (capitolo~\ref{ch:lr}), reti neurali, $k$-Nearest Neighbors, e così via.
+
+\section{Il classificatore Naive Bayes}
+\textbf{Naive Bayes} è un metodo di classificazione semplice (\enquote{naive}, ingenuo) basato sulla regola di Bayes. Si appoggia a una rappresentazione molto semplice del documento, la \textbf{bag of words}: il testo viene trattato come un insieme non ordinato di parole, di cui si ignora la posizione e si conserva solo la frequenza (figura~\ref{fig:bow}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, >=Stealth, font=\scriptsize]
+  \node[draw=RuleGray, text width=4.6cm, align=left, inner sep=5pt, font=\scriptsize\itshape] (doc) at (0,0)
+    {I love this movie! It's sweet, but with satirical humor. The dialogue is great and the adventure scenes are fun\dots{} It manages to be whimsical and romantic while laughing at the conventions of the fairy tale genre. I would recommend it to just about anyone. I've seen it several times, and I'm always happy to see it again whenever I have a friend who hasn't seen it yet!};
+  % il sacchetto: le parole in disordine
+  \begin{scope}[xshift=4.6cm]
+    \draw[ObsColor, thick, fill=ObsColor!8, rounded corners=6pt] (-1.3,-1.9) -- (-1.5,1.5) -- (1.5,1.5) -- (1.3,-1.9) -- cycle;
+    \draw[ObsColor, thick] (-0.6,1.5) .. controls (-0.6,2.3) and (0.6,2.3) .. (0.6,1.5);
+    \foreach \w/\x/\y/\r in {it/-0.9/1.1/10, I/0.2/1.15/-5, the/0.9/0.9/15, love/-0.4/0.7/-10, it/0.5/0.45/20, to/-1.0/0.3/0, and/-0.1/0.15/-15,
+        seen/0.9/0.0/5, I/-0.6/-0.2/25, whimsical/0.2/-0.35/-8, it/-1.0/-0.65/12, the/0.8/-0.7/-20, recommend/-0.2/-0.95/5,
+        I/0.85/-1.25/0, happy/-0.75/-1.35/-12, fun/0.15/-1.55/18}
+      \node[rotate=\r, font=\scriptsize] at (\x,\y) {\w};
+  \end{scope}
+  % i conteggi
+  \node[anchor=west, align=left, font=\scriptsize\ttfamily] (tab) at (7.0,0) {%
+    \begin{tabular}{@{}lr@{}}
+    it & 6 \\ I & 5 \\ the & 4 \\ to & 3 \\ and & 3 \\ seen & 2 \\ yet & 1 \\ would & 1 \\ whimsical & 1 \\ times & 1 \\ sweet & 1 \\ \dots & \dots
+    \end{tabular}};
+  \draw[flow, Accent] (doc.east) -- (3.0,0);
+  \draw[flow, Accent] (6.2,0) -- (tab.west);
+\end{tikzpicture}
+\caption{La rappresentazione bag of words di una recensione: le parole vengono messe in un \enquote{sacchetto} perdendo il loro ordine, e del documento resta solo il conteggio di ciascuna parola.}
+\label{fig:bow}
+\end{figure}
+
+\subsection{La regola di Bayes applicata ai documenti}
+Per un documento $d$ e una classe $c$, la regola di Bayes dice che:
+\begin{equation}
+P(c \mid d) = \frac{P(d \mid c)\, P(c)}{P(d)}.
+\end{equation}
+Il classificatore sceglie la classe più probabile dato il documento, ovvero la classe \textbf{MAP} (maximum a posteriori):
+\begin{equation}
+c_{\text{MAP}} = \argmax_{c \in C} P(c \mid d) = \argmax_{c \in C} \frac{P(d \mid c)\, P(c)}{P(d)} = \argmax_{c \in C} P(d \mid c)\, P(c)
+\end{equation}
+dove nell'ultimo passaggio abbiamo eliminato il denominatore, che è lo stesso per tutte le classi: stiamo sempre confrontando le classi per lo stesso documento $d$. Il termine $P(c)$ è il \textbf{prior} della classe, mentre $P(d \mid c)$ è la \textbf{likelihood} del documento\footnote{Naive Bayes è un modello \textbf{generativo}: possiamo leggere la formula come una descrizione di come viene generato un documento. Prima si sceglie una classe secondo $P(c)$, poi si generano le parole secondo $P(d \mid c)$. Riprenderemo questa distinzione nel capitolo~\ref{ch:lr}.}.
+
+Rappresentiamo ora il documento $d$ con delle feature $x_1, \dots, x_n$:
+\begin{equation}
+c_{\text{MAP}} = \argmax_{c \in C} \underbrace{P(x_1, x_2, \dots, x_n \mid c)}_{\text{likelihood}}\, \underbrace{P(c)}_{\text{prior}}.
+\end{equation}
+Il prior è facile da stimare: basta contare quanto spesso compare ogni classe nel corpus. La likelihood invece ha $O(|X|^n \cdot |C|)$ parametri, uno per ogni possibile combinazione di feature e classe, e potrebbe essere stimata solo con un numero enorme di esempi di training.
+
+\subsection{Le assunzioni di Naive Bayes}
+Il Naive Bayes multinomiale risolve il problema con due assunzioni:
+\begin{itemize}
+    \item \textbf{Bag of words}: la posizione delle parole non conta, e \textit{love} ha lo stesso effetto sulla classificazione che sia la prima, la ventesima o l'ultima parola del documento.
+    \item \textbf{Indipendenza condizionale}: le probabilità delle feature $P(x_i \mid c)$ sono indipendenti tra loro, data la classe.
+\end{itemize}
+La seconda assunzione permette di scrivere la likelihood come un prodotto:
+\begin{equation}
+P(x_1, \dots, x_n \mid c) = P(x_1 \mid c) \cdot P(x_2 \mid c) \cdot P(x_3 \mid c) \cdots P(x_n \mid c)
+\end{equation}
+e quindi il classificatore diventa:
+\begin{equation}
+c_{\text{NB}} = \argmax_{c \in C} P(c) \prod_{x \in X} P(x \mid c).
+\end{equation}
+Per applicarlo alla classificazione del testo, consideriamo come feature le parole del documento, scorrendo tutte le posizioni del documento di test:
+\begin{equation}\label{eq:nb}
+c_{\text{NB}} = \argmax_{c_j \in C} P(c_j) \prod_{i \in \text{positions}} P(x_i \mid c_j)
+\end{equation}
+dove \textit{positions} indica tutte le posizioni delle parole nel documento di test.
+
+\paragraph{Lo spazio dei logaritmi.} Moltiplicare tante probabilità, come $0.0006 \cdot 0.0007 \cdot 0.0009 \cdot 0.01 \cdot 0.5 \cdot 0.000008 \cdots$, porta all'underflow. Come per i modelli di linguaggio (capitolo~\ref{ch:ngram}), si lavora quindi nello spazio dei logaritmi, sommando i logaritmi delle probabilità invece di moltiplicare le probabilità:
+\begin{equation}
+c_{\text{NB}} = \argmax_{c_j \in C} \left[ \log P(c_j) + \sum_{i \in \text{positions}} \log P(x_i \mid c_j) \right].
+\end{equation}
+Osserviamo due cose. La prima, è che il logaritmo non cambia l'ordine delle classi: la classe con la probabilità più alta ha anche il logaritmo della probabilità più alto. La seconda è che la formula è il massimo di una somma di pesi, ovvero una funzione lineare degli input: Naive Bayes è un \textbf{classificatore lineare}.
+
+\section{Addestrare Naive Bayes}
+Come primo tentativo usiamo le stime di massima verosimiglianza, ovvero le frequenze nei dati:
+\begin{equation}\label{eq:nb-mle}
+\hat{P}(c_j) = \frac{N_{c_j}}{N_{\text{total}}}, \qquad \hat{P}(w_i \mid c_j) = \frac{\text{count}(w_i, c_j)}{\sum_{w \in V} \text{count}(w, c_j)}
+\end{equation}
+dove $N_{c_j}$ è il numero di documenti della classe $c_j$ e $N_{\text{total}}$ il numero totale di documenti. Per stimare le likelihood si crea, per ogni classe $c_j$, un \enquote{mega-documento} che concatena tutti i documenti di quella classe, e si usa la frequenza di $w_i$ in questo mega-documento: $\hat{P}(w_i \mid c_j)$ è la frazione di volte in cui $w_i$ compare tra tutte le parole dei documenti della classe $c_j$. Il vocabolario $V$ è l'unione dei type di tutte le classi, e non contiene soltanto quelli della classe $c_j$.
+
+\paragraph{Il problema della massima verosimiglianza.} Cosa succede se nel training non abbiamo mai visto la parola \textit{fantastic} in un documento positivo? La stima è:
+\[
+\hat{P}(\text{fantastic} \mid \text{positive}) = \frac{\text{count}(\text{fantastic}, \text{positive})}{\sum_{w \in V} \text{count}(w, \text{positive})} = 0
+\]
+e dato che nella~\eqref{eq:nb} le likelihood si moltiplicano, uno zero annulla la probabilità della classe, qualunque sia il resto dell'evidenza. È lo stesso problema degli zeri dei modelli N-gram, e la soluzione più semplice è la stessa: il \textbf{Laplace smoothing} (add-1):
+\begin{equation}\label{eq:nb-laplace}
+\hat{P}(w_i \mid c) = \frac{\text{count}(w_i, c) + 1}{\sum_{w \in V} \big(\text{count}(w, c) + 1\big)} = \frac{\text{count}(w_i, c) + 1}{\left(\sum_{w \in V} \text{count}(w, c)\right) + |V|}.
+\end{equation}
+Come avevamo anticipato, l'add-1 smoothing non funziona bene per i modelli di linguaggio, ma è molto usato nella classificazione del testo. L'algoritmo~\ref{alg:nb} riassume l'addestramento e il test, con lo smoothing generalizzato a un valore $\alpha$ qualsiasi.
+
+\begin{algorithm}[htbp]
+\caption{Addestramento e test di Naive Bayes multinomiale con add-$\alpha$ smoothing, nello spazio dei logaritmi.}
+\label{alg:nb}
+\begin{algorithmic}[1]
+\Function{TrainNaiveBayes}{documenti $D$, classi $C$}
+  \State $V \gets$ vocabolario di $D$
+  \ForAll{$c_j \in C$}
+    \State $\text{docs}_j \gets$ tutti i documenti di $D$ con classe $c_j$
+    \State $\text{logprior}[c_j] \gets \log \frac{|\text{docs}_j|}{|D|}$
+    \State $\text{Text}_j \gets$ un unico documento che concatena $\text{docs}_j$
+    \State $n \gets$ numero di token in $\text{Text}_j$
+    \ForAll{$w_k \in V$}
+      \State $n_k \gets$ numero di occorrenze di $w_k$ in $\text{Text}_j$
+      \State $\text{loglikelihood}[w_k, c_j] \gets \log \frac{n_k + \alpha}{n + \alpha|V|}$
+    \EndFor
+  \EndFor
+  \State \Return logprior, loglikelihood, $V$
+\EndFunction
+\Function{TestNaiveBayes}{documento $d$, logprior, loglikelihood, $C$, $V$}
+  \ForAll{$c_j \in C$}
+    \State $\text{sum}[c_j] \gets \text{logprior}[c_j]$
+    \ForAll{posizione $i$ in $d$}
+      \If{$d[i] \in V$} \Comment{le parole sconosciute si ignorano}
+        \State $\text{sum}[c_j] \gets \text{sum}[c_j] + \text{loglikelihood}[d[i], c_j]$
+      \EndIf
+    \EndFor
+  \EndFor
+  \State \Return $\argmax_{c_j} \text{sum}[c_j]$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Parole sconosciute e stop word.} Cosa facciamo con le parole che compaiono nel test ma non nel training, e quindi non sono nel vocabolario? Le ignoriamo: le togliamo dal documento di test, come se non ci fossero, senza includere nessuna probabilità per loro. Non serve costruire un modello delle parole sconosciute, perché sapere quale classe ha più parole sconosciute in generale non aiuta.
+
+Alcuni sistemi ignorano anche le \textbf{stop word}, ovvero le parole molto frequenti come \textit{the} e \textit{a}: si ordina il vocabolario per frequenza nel training set, si prendono le prime 10 o 50 parole come lista di stop word e le si rimuove sia dal training sia dal test. Rimuovere le stop word però di solito non aiuta, e in pratica la maggior parte delle implementazioni di Naive Bayes usa tutte le parole.
+
+\section{Un esempio svolto}\label{sec:nb-esempio}
+Vediamo un esempio di sentiment analysis con add-1 smoothing, con due classi, positiva ($+$) e negativa ($-$), e questi documenti di training e di test:
+\begin{center}
+\begin{tabular}{lcl}
+\toprule
+ & Classe & Documento \\
+\midrule
+Training & $-$ & just plain boring \\
+ & $-$ & entirely predictable and lacks energy \\
+ & $-$ & no surprises and very few laughs \\
+ & $+$ & very powerful \\
+ & $+$ & the most fun film of the summer \\
+\midrule
+Test & ? & predictable with no fun \\
+\bottomrule
+\end{tabular}
+\end{center}
+I passi sono quattro, e la figura~\ref{fig:nb-esempio} li riassume:
+\begin{enumerate}
+    \item \textbf{Prior}: tre documenti su cinque sono negativi, quindi $P(-) = 3/5$ e $P(+) = 2/5$.
+    \item \textbf{Parole sconosciute}: \textit{with} non compare nel training set, quindi la togliamo.
+    \item \textbf{Likelihood}: il vocabolario ha $|V| = 20$ parole, i documenti negativi hanno in tutto 14 token e quelli positivi 9. Con la~\eqref{eq:nb-laplace}:
+    \[
+    \begin{array}{ll}
+    P(\text{predictable} \mid -) = \dfrac{1 + 1}{14 + 20} & P(\text{predictable} \mid +) = \dfrac{0 + 1}{9 + 20} \\[10pt]
+    P(\text{no} \mid -) = \dfrac{1 + 1}{14 + 20} & P(\text{no} \mid +) = \dfrac{0 + 1}{9 + 20} \\[10pt]
+    P(\text{fun} \mid -) = \dfrac{0 + 1}{14 + 20} & P(\text{fun} \mid +) = \dfrac{1 + 1}{9 + 20}
+    \end{array}
+    \]
+    \item \textbf{Punteggio}: per la frase di test $S$ = \enquote{predictable no fun}:
+    \[
+    \begin{aligned}
+    P(-)\, P(S \mid -) &= \frac{3}{5} \times \frac{2 \times 2 \times 1}{34^3} = 6.1 \times 10^{-5}, \\
+    P(+)\, P(S \mid +) &= \frac{2}{5} \times \frac{1 \times 1 \times 2}{29^3} = 3.3 \times 10^{-5}.
+    \end{aligned}
+    \]
+\end{enumerate}
+Il modello predice quindi la classe negativa\footnote{Il libro e le slide riportano $3.2 \times 10^{-5}$ per la classe positiva, troncando il risultato: $\frac{2}{5} \cdot \frac{2}{24389} = 3.28 \times 10^{-5}$. La conclusione non cambia.}.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{naive-bayes}[test=predictable with no fun]
+\begin{tikzpicture}[nlp, >=Stealth, font=\small,
+  box/.style={draw=Accent, fill=Accent!5, rounded corners=3pt, inner sep=5pt, align=left},
+  win/.style={box, draw=FigColor, fill=FigColor!15, thick}]
+  \node[box, anchor=north west] (tr) at (0,0) {\textbf{training}\\[2pt]
+    \begin{tabular}{@{}cl@{}}
+    $-$ & just plain boring \\ $-$ & entirely predictable and lacks energy \\ $-$ & no surprises and very few laughs \\
+    $+$ & very powerful \\ $+$ & the most fun film of the summer
+    \end{tabular}};
+  \node[box, anchor=north west] (te) at (7.6,0) {\textbf{test}\\[2pt] \texttt{predictable \sout{with} no fun}\\[4pt]
+    {\scriptsize $|V| = 20$, 14 token in $-$, 9 in $+$}\\[2pt] {\scriptsize $P(-) = 3/5$, \ $P(+) = 2/5$}};
+  \node[box, anchor=north west] (lik) at (0,-3.1) {
+    \begin{tabular}{@{}lcc@{}}
+    & $P(w \mid -)$ & $P(w \mid +)$ \\
+    predictable & $(1+1)/34$ & $(0+1)/29$ \\
+    no & $(1+1)/34$ & $(0+1)/29$ \\
+    fun & $(0+1)/34$ & $(1+1)/29$
+    \end{tabular}};
+  \node[win, anchor=north west] (neg) at (6.4,-3.1) {$P(-)\,P(S \mid -) = \frac{3}{5} \cdot \frac{2 \cdot 2 \cdot 1}{34^3} = 6.1 \times 10^{-5}$};
+  \node[box, anchor=north west] (pos) at (6.4,-4.3) {$P(+)\,P(S \mid +) = \frac{2}{5} \cdot \frac{1 \cdot 1 \cdot 2}{29^3} = 3.3 \times 10^{-5}$};
+  \draw[flow, Accent] (lik.east) -- (neg.west);
+  \draw[flow, Accent] (lik.east) -- (pos.west);
+  \node[anchor=west, font=\small, FigColor] at (6.4,-5.4) {vince la classe negativa};
+\end{tikzpicture}
+\end{widget}
+\caption{L'esempio svolto di Naive Bayes con add-1 smoothing: la parola sconosciuta \textit{with} viene eliminata, le tre parole restanti hanno una likelihood per ciascuna classe, e il punteggio più alto è quello della classe negativa.}
+\label{fig:nb-esempio}
+\end{figure}
+
+\begin{esercizio}[Naive Bayes su IMDB]
+Sviluppare un classificatore Naive Bayes e addestrarlo sul dataset di recensioni IMDB (\url{https://huggingface.co/datasets/stanfordnlp/imdb}).
+\end{esercizio}
+
+\section{Ottimizzare Naive Bayes per la sentiment analysis}
+\subsection{Binary Naive Bayes}
+Per task come la sentiment analysis, il fatto che una parola compaia sembra contare più della sua frequenza: che in una recensione compaia \textit{fantastic} ci dice molto, che compaia cinque volte non ci dice molto di più. Il \textbf{binary multinomial Naive Bayes} (o binary NB) taglia quindi i conteggi delle parole a 1\footnote{Non è la stessa cosa del Bernoulli Naive Bayes, che modella anche l'assenza delle parole.}. L'algoritmo è lo stesso dell'algoritmo~\ref{alg:nb}, con una sola modifica: prima di concatenare i documenti di una classe, si eliminano i duplicati in ogni documento, conservando un'unica istanza di ogni type. Allo stesso modo, sul documento di test si eliminano i duplicati prima di applicare la~\eqref{eq:nb}.
+
+La binarizzazione avviene \textbf{dentro il singolo documento}, per cui i conteggi finali possono essere anche maggiori di 1. Consideriamo quattro documenti (senza smoothing, per vedere meglio le differenze):
+\begin{center}
+\begin{tabular}{cl}
+$-$ & it was pathetic the worst part was the boxing scenes \\
+$-$ & no plot twists or great scenes \\
+$+$ & and satire and great plot twists \\
+$+$ & great scenes great film \\
+\end{tabular}
+\end{center}
+Dopo la binarizzazione, \textit{the} e \textit{was} contano una volta sola nel primo documento, \textit{and} una volta sola nel terzo e \textit{great} una volta sola nel quarto. I conteggi diventano quindi:
+\begin{center}
+\small
+\begin{tabular}{l|cccccccc}
+\toprule
+ & and & great & scenes & the & was & plot & twists & film \\
+\midrule
+NB, $+$ & 2 & 3 & 1 & 0 & 0 & 1 & 1 & 1 \\
+NB, $-$ & 0 & 1 & 2 & 2 & 2 & 1 & 1 & 0 \\
+Binary, $+$ & 1 & 2 & 1 & 0 & 0 & 1 & 1 & 1 \\
+Binary, $-$ & 0 & 1 & 2 & 1 & 1 & 1 & 1 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+dove \textit{great} ha ancora conteggio 2 nella classe positiva, perché compare in due documenti diversi.
+
+\subsection{Negazione}
+Consideriamo \enquote{I really like this movie} e \enquote{I really don't like this movie}: la negazione cambia il significato di \textit{like} da positivo a negativo. Allo stesso modo, la negazione può rendere positivo (o quasi) qualcosa di negativo: \enquote{Don't dismiss this film}, \enquote{Doesn't let us get bored}. Una baseline molto semplice \cite{pang2002} consiste nell'aggiungere il prefisso \texttt{NOT\_} a ogni parola compresa tra una negazione e la punteggiatura successiva:
+\begin{center}
+\textit{didn't like this movie , but I} \quad $\longrightarrow$ \quad \textit{didn't NOT\_like NOT\_this NOT\_movie , but I}
+\end{center}
+Le nuove \enquote{parole} come \texttt{NOT\_like} compariranno più spesso nei documenti negativi, mentre parole come \texttt{NOT\_bored} acquisiranno un'associazione positiva.
+
+\subsection{Lessici}
+A volte non abbiamo abbastanza dati etichettati. In questo caso possiamo usare liste di parole già annotate, chiamate \textbf{lessici}, e ne esistono diverse disponibili pubblicamente:
+\begin{itemize}
+    \item \textbf{MPQA Subjectivity Cues Lexicon} \cite{wilson2005}: 6885 parole (da 8221 lemmi) annotate per intensità (forte o debole), di cui 2718 positive, come \textit{admirable}, \textit{beautiful}, \textit{confident}, \textit{great}, e 4912 negative, come \textit{awful}, \textit{bad}, \textit{cheat}, \textit{hate}.
+    \item \textbf{General Inquirer} \cite{stone1966}: 1915 parole positive e 2291 negative, più altre categorie come forte o debole, attivo o passivo, piacere, dolore, virtù, vizio.
+\end{itemize}
+Il modo più comune di usare un lessico è aggiungere una feature che si incrementa ogni volta che compare una parola del lessico, ad esempio \enquote{questa parola compare nel lessico positivo} e \enquote{questa parola compare nel lessico negativo}. Tutte le parole positive (\textit{good}, \textit{great}, \textit{beautiful}, \textit{wonderful}) contano così per la stessa feature. Usare una o due feature non funziona bene quanto usare tutte le parole, ma quando i dati di training sono pochi o non rappresentativi del test set, feature dense come quelle dei lessici possono generalizzare meglio.
+
+\section{Naive Bayes per altri task}
+Le feature di Naive Bayes non devono essere per forza parole: possono esprimere qualsiasi proprietà del testo. Nello \textbf{spam filtering}, ad esempio, il tool SpamAssassin usa feature come \enquote{menziona milioni di dollari} (un'espressione regolare per somme di denaro sospette), \enquote{il campo From inizia con molti numeri} o \enquote{l'oggetto è tutto in maiuscolo}. Altre feature sono \enquote{l'HTML ha un rapporto basso tra testo e area delle immagini}, la frase \enquote{One hundred percent guaranteed} o \enquote{dice che puoi essere rimosso dalla lista}.
+
+Nell'\textbf{identificazione della lingua} (language ID), invece, le feature più efficaci sono gli N-gram di caratteri, ed è opportuno addestrare il modello su molte varietà di ogni lingua (ad esempio sull'African American English, o sull'inglese parlato in India).
+
+In generale, Naive Bayes non è così ingenuo:
+\begin{itemize}
+    \item è molto veloce e richiede poco spazio;
+    \item funziona bene anche con pochissimi dati di training;
+    \item è robusto alle feature irrilevanti, che si compensano a vicenda senza influenzare il risultato;
+    \item funziona bene nei domini con molte feature ugualmente importanti, dove ad esempio gli alberi di decisione soffrono di frammentazione, soprattutto con pochi dati;
+    \item è ottimo se le assunzioni di indipendenza sono vere: in quel caso è il classificatore ottimo di Bayes per il problema.
+\end{itemize}
+È quindi una baseline affidabile per la classificazione del testo, anche se vedremo altri classificatori con un'accuratezza migliore.
+
+\section{Naive Bayes come modello di linguaggio}
+Naive Bayes può usare qualsiasi tipo di feature: URL, indirizzi email, dizionari. Se però usiamo solo le parole come feature, e le usiamo tutte (non un sottoinsieme), Naive Bayes ha una somiglianza importante con i modelli di linguaggio del capitolo~\ref{ch:ngram}: \textbf{ogni classe è un modello di linguaggio unigram}. Le likelihood assegnano una probabilità $P(w \mid c)$ a ogni parola, e quindi anche una probabilità a ogni frase:
+\begin{equation}
+P(s \mid c) = \prod_{i \in \text{positions}} P(w_i \mid c).
+\end{equation}
+Forniamo il seguente esempio. Supponiamo che le likelihood delle due classi siano:
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+$w$ & $P(w \mid +)$ & $P(w \mid -)$ \\
+\midrule
+I & 0.1 & 0.2 \\
+love & 0.1 & 0.001 \\
+this & 0.01 & 0.01 \\
+fun & 0.05 & 0.005 \\
+film & 0.1 & 0.1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+La frase \enquote{I love this fun film} ha probabilità $0.1 \times 0.1 \times 0.01 \times 0.05 \times 0.1 = 5 \times 10^{-7}$ secondo il modello positivo e $0.2 \times 0.001 \times 0.01 \times 0.005 \times 0.1 = 10^{-9}$ secondo quello negativo, quindi $P(s \mid +) > P(s \mid -)$. Si tratta solo della likelihood, senza il prior, per cui questo è un approccio a massima verosimiglianza: moltiplicando per il prior, il classificatore completo potrebbe prendere una decisione diversa.
+
+\section{Valutazione}\label{sec:nb-valutazione}
+Consideriamo per ora un task di classificazione binaria. Supponiamo di essere il CEO della \textit{Delicious Pie Company}, e di voler sapere cosa dice la gente delle nostre torte. Costruiamo quindi un rilevatore di tweet su Delicious Pie, in cui la classe positiva sono i tweet che parlano della Delicious Pie Company e la classe negativa tutti gli altri. Per valutarlo confrontiamo l'output del sistema con le etichette corrette, assegnate a mano (le \textbf{gold label}), in una \textbf{matrice di confusione} (figura~\ref{fig:confusion}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, font=\small,
+  c/.style={minimum width=2.6cm, minimum height=1cm, draw=white, very thick},
+  ok/.style={c, fill=LemmaColor!35}, ko/.style={c, fill=red!25}]
+  \node[ok] (tp) at (0,0) {true positive};
+  \node[ko] (fp) at (2.6,0) {false positive};
+  \node[ko] (fn) at (0,-1) {false negative};
+  \node[ok] (tn) at (2.6,-1) {true negative};
+  \node at (0,0.8) {gold positive};
+  \node at (2.6,0.8) {gold negative};
+  \node[font=\small\itshape] at (1.3,1.35) {gold standard labels};
+  \node[anchor=east, align=right] at (-1.4,0) {system\\positive};
+  \node[anchor=east, align=right] at (-1.4,-1) {system\\negative};
+  \node[anchor=east, align=right, font=\small\itshape] at (-3.0,-0.5) {system\\output};
+  \node[anchor=west] at (4.1,0) {$\text{precision} = \dfrac{tp}{tp + fp}$};
+  \node at (0,-2.1) {$\text{recall} = \dfrac{tp}{tp + fn}$};
+  \node[anchor=west] at (4.1,-2.1) {$\text{accuracy} = \dfrac{tp + tn}{tp + fp + tn + fn}$};
+\end{tikzpicture}
+\caption{La matrice di confusione di un classificatore binario: le righe sono l'output del sistema, le colonne le gold label. La precision si calcola sulla riga dei positivi del sistema, la recall sulla colonna dei positivi veri.}
+\label{fig:confusion}
+\end{figure}
+
+\paragraph{Perché non l'accuratezza?} L'accuratezza (accuracy) è la percentuale di osservazioni classificate correttamente, e sembrerebbe la metrica più naturale. Supponiamo però di aver raccolto un milione di tweet, di cui solo 100 parlano della Delicious Pie Company e 999\,900 di altro. Un classificatore stupido, che etichetta ogni tweet come \enquote{non parla di torte}, avrebbe un'accuratezza del 99.99\%. Eppure sarebbe inutile, perché non troverebbe nessuno dei tweet che stiamo cercando. L'accuratezza non è una buona metrica quando le classi sono sbilanciate, che è proprio il caso in cui vogliamo trovare qualcosa di raro.
+
+\paragraph{Precision e recall.} Si usano quindi altre due metriche:
+\begin{itemize}
+    \item la \textbf{precision} è la percentuale degli elementi rilevati dal sistema (ovvero etichettati come positivi) che sono davvero positivi secondo le gold label: $tp / (tp + fp)$;
+    \item la \textbf{recall} è la percentuale degli elementi davvero presenti nell'input che il sistema ha identificato correttamente: $tp / (tp + fn)$.
+\end{itemize}
+Il nostro classificatore stupido ha un'accuratezza del 99.99\% ma una recall di 0, perché non trova nessuno dei 100 tweet sulle torte. A differenza dell'accuratezza, precision e recall mettono al centro i veri positivi, ovvero le cose che stiamo cercando.
+
+\paragraph{F-measure.} Per combinare precision ($P$) e recall ($R$) in un solo numero si usa la \textbf{F-measure}:
+\begin{equation}
+F_\beta = \frac{(\beta^2 + 1) P R}{\beta^2 P + R}
+\end{equation}
+dove $\beta$ pesa l'importanza delle due metriche: con $\beta > 1$ conta di più la recall, con $\beta < 1$ la precision. Quasi sempre si usa $\beta = 1$, ovvero la \textbf{F1}:
+\begin{equation}
+F_1 = \frac{2PR}{P + R}.
+\end{equation}
+La F-measure è una media armonica pesata di precision e recall. Il libro spiega che la media armonica di due valori è più vicina al minimo dei due rispetto alla media aritmetica, quindi è una scelta più conservativa: per avere una F1 alta servono sia la precision sia la recall alte.
+
+\subsection{Più di due classi}
+Oltre alla classificazione binaria, con due classi come 0 e 1, positiva e negativa o spam e non spam, ci sono altri due casi:
+\begin{itemize}
+    \item \textbf{Classificazione multi-classe}: un testo è associato a una tra $N$ classi, ad esempio positiva, negativa o neutra, oppure urgent, normal o spam.
+    \item \textbf{Classificazione multi-label}: un testo può essere associato a zero, una o più delle $N$ classi, che quindi non sono mutuamente esclusive. Nell'emotion detection, ad esempio, \enquote{What a surprise, I'm happy to see you!} esprime sia gioia sia sorpresa. In questo caso si tratta ogni classe separatamente come un problema binario. L'insieme delle etichette di un testo si rappresenta quindi con un vettore binario (\textit{one-hot encoding}), in cui ogni posizione corrisponde a una classe e vale 1 se il testo è associato a quella classe, 0 altrimenti.
+\end{itemize}
+
+Con più classi la matrice di confusione diventa più grande. Consideriamo un classificatore di email in tre classi (tabella~\ref{tab:confusion3}): la precision di una classe si calcola sulla sua riga e la recall sulla sua colonna.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{ll|ccc|l}
+\toprule
+ & & \multicolumn{3}{c|}{gold labels} & \\
+ & & urgent & normal & spam & precision \\
+\midrule
+system & urgent & 8 & 10 & 1 & $8/(8 + 10 + 1)$ \\
+output & normal & 5 & 60 & 50 & $60/(5 + 60 + 50)$ \\
+ & spam & 3 & 30 & 200 & $200/(3 + 30 + 200)$ \\
+\midrule
+ & recall & $8/(8 + 5 + 3)$ & $60/(10 + 60 + 30)$ & $200/(1 + 50 + 200)$ & \\
+\bottomrule
+\end{tabular}
+\caption{Matrice di confusione per una classificazione in tre classi (urgent, normal, spam): ad esempio il sistema ha etichettato come urgent un'email che in realtà era spam.}
+\label{tab:confusion3}
+\end{table}
+
+Per ottenere un'unica metrica le possibilità sono due:
+\begin{itemize}
+    \item \textbf{Macroaveraging}: si calcolano le prestazioni per ogni classe, e poi si fa la media sulle classi.
+    \item \textbf{Microaveraging}: si raccolgono le decisioni di tutte le classi in un'unica matrice di confusione, e da questa si calcolano precision e recall.
+\end{itemize}
+Nell'esempio, separando le classi si ottengono le matrici della tabella~\ref{tab:micro-macro}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l|cc|cc|cc|cc}
+\toprule
+ & \multicolumn{2}{c|}{Urgent} & \multicolumn{2}{c|}{Normal} & \multicolumn{2}{c|}{Spam} & \multicolumn{2}{c}{Pooled} \\
+ & true & not & true & not & true & not & true & not \\
+\midrule
+system yes & 8 & 11 & 60 & 55 & 200 & 33 & 268 & 99 \\
+system no & 8 & 340 & 40 & 212 & 51 & 83 & 99 & 635 \\
+\midrule
+precision & \multicolumn{2}{c|}{$\frac{8}{8 + 11} = .42$} & \multicolumn{2}{c|}{$\frac{60}{60 + 55} = .52$} & \multicolumn{2}{c|}{$\frac{200}{200 + 33} = .86$} & \multicolumn{2}{c}{$\frac{268}{268 + 99} = .73$} \\
+\bottomrule
+\end{tabular}
+\caption{Le matrici di confusione delle tre classi della tabella~\ref{tab:confusion3}, prese una alla volta, e la loro somma (pooled). La macroaverage precision è $(.42 + .52 + .86)/3 = .60$, la microaverage precision è quella della matrice pooled, $.73$.}
+\label{tab:micro-macro}
+\end{table}
+
+La macroaverage precision è $(.42 + .52 + .86)/3 = .60$, mentre la microaverage precision è $268/(268 + 99) = .73$. Il microaverage è dominato dalla classe più frequente (qui spam), perché i conteggi vengono sommati. Il macroaverage riflette meglio le prestazioni sulle classi piccole, ed è quindi più opportuno quando tutte le classi sono ugualmente importanti. In Python tutte queste metriche si calcolano con la funzione \texttt{classification\_report} di scikit-learn.
+
+\section{Development set e cross-validation}
+Come per i modelli di linguaggio, si addestra sul training set, si regolano i parametri sul \textbf{development set} (devset) e si riportano le prestazioni sul test set. In questo modo si evita l'overfitting sul test set (\textit{tuning to the test set}), e si ottiene una stima più conservativa delle prestazioni. C'è però un paradosso: vorremmo usare più dati possibile per il training, ma anche per il devset. Come dividiamo i dati?
+
+La soluzione è la \textbf{cross-validation}. Si sceglie un numero $k$ e si partizionano i dati in $k$ sottoinsiemi disgiunti, detti \textbf{fold}. Si usa uno dei fold come devset e si addestra il classificatore sugli altri $k - 1$, poi si ripete con un altro fold, per $k$ volte, e alla fine si mettono insieme (pool) i risultati dei $k$ run. Con $k = 10$ si parla di \textbf{10-fold cross-validation}.
+
+Visto che in questo modo tutti i dati vengono usati per valutare, non potremmo guardarli per scegliere le feature senza \enquote{sbirciare} il test set: per questo si tiene comunque da parte un test set fisso, e si fa la cross-validation solo dentro il training set (figura~\ref{fig:cv}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[nlp, font=\scriptsize,
+  tr/.style={draw=TextGray, fill=ObsColor!25, minimum height=4mm, inner sep=0},
+  dv/.style={draw=TextGray, fill=Accent!25, minimum height=4mm, inner sep=0}]
+  \foreach \i in {1,...,10} {
+    \node[anchor=east] at (-0.15,-0.5*\i) {\i};
+    \pgfmathsetmacro{\a}{0.8*(\i-1)}
+    \pgfmathsetmacro{\b}{0.8*\i}
+    \ifnum\i>1 \draw[tr] (0,-0.5*\i-0.2) rectangle (\a,-0.5*\i+0.2); \fi
+    \draw[dv] (\a,-0.5*\i-0.2) rectangle (\b,-0.5*\i+0.2) node[midway] {Dev};
+    \ifnum\i<10 \draw[tr] (\b,-0.5*\i-0.2) rectangle (8,-0.5*\i+0.2); \fi
+  }
+  \node[anchor=south west, font=\small] at (0,-0.2) {iterazioni di training (in arancione i fold di training)};
+  \draw[draw=TextGray, fill=FigColor!25] (8.6,-3.3) rectangle (9.8,-2.2) node[midway, align=center] {Test\\set};
+\end{tikzpicture}
+\caption{10-fold cross-validation dentro il training set: a ogni iterazione un fold diverso fa da devset e gli altri nove da training. Il test set resta fuori, e si usa una volta sola alla fine.}
+\label{fig:cv}
+\end{figure}
+
+\section{Significatività statistica}
+Come facciamo a sapere se un classificatore è migliore di un altro? Supponiamo di avere due classificatori A e B e una metrica $M$, dove $M(A, x)$ è la prestazione di A sul test set $x$. Indichiamo con $\delta(x)$ la differenza di prestazione tra A e B su $x$:
+\begin{equation}
+\delta(x) = M(A, x) - M(B, x)
+\end{equation}
+dove $\delta(x)$ è detto \textbf{effect size}. Vogliamo sapere se $\delta(x) > 0$, ovvero se A è migliore di B. Se guardiamo $\delta(x)$ e vediamo che è positivo, abbiamo finito? No: potrebbe essere solo un caso, dovuto a questo particolare test set o alle circostanze dell'esperimento.
+
+\subsection{Test di ipotesi}
+Consideriamo due ipotesi:
+\begin{itemize}
+    \item l'\textbf{ipotesi nulla} $H_0$: A non è migliore di B, ovvero $\delta(x) \leq 0$;
+    \item l'ipotesi alternativa $H_1$: A è migliore di B, ovvero $\delta(x) > 0$.
+\end{itemize}
+Vogliamo escludere $H_0$. Creiamo quindi una variabile aleatoria $X$ che varia su tutti i possibili test set, e ci chiediamo: se $H_0$ fosse vera, quanto sarebbe probabile vedere, tra questi test set, il $\delta(x)$ che abbiamo visto? Questa probabilità è il \textbf{p-value}:
+\begin{equation}
+P\big(\delta(X) \geq \delta(x) \mid H_0 \text{ è vera}\big).
+\end{equation}
+Se $H_0$ è vera ma $\delta(x)$ è enorme, siamo sorpresi, e il p-value è molto basso. Un p-value molto piccolo (le soglie usuali sono .05 o .01) vuol dire che la differenza osservata è molto improbabile sotto l'ipotesi nulla, e possiamo quindi rifiutarla. Un risultato (ad esempio \enquote{A è migliore di B}) è \textbf{statisticamente significativo} se il $\delta$ osservato ha una probabilità sotto la soglia, e quindi rifiutiamo l'ipotesi nulla.
+
+Come si calcola questa probabilità? In NLP non si usano di solito test parametrici, come il t-test, perché fanno assunzioni sulla distribuzione della statistica (ad esempio la normalità) che in genere non valgono. Si usano invece \textbf{test non parametrici basati sul campionamento}: si creano artificialmente molte versioni dell'esperimento. Supponiamo, ad esempio, di avere moltissimi test set $x'$: misurando $\delta(x')$ su ciascuno otteniamo una distribuzione. Fissata una soglia (ad esempio .01), se vediamo che nel 99\% dei test set $\delta(x) > \delta(x')$, concludiamo che il $\delta(x)$ osservato è reale e non un artefatto.
+
+I due approcci più comuni sono l'\textbf{approximate randomization} e il \textbf{bootstrap test}, entrambi nella versione \textbf{paired}, in cui si confrontano due insiemi di osservazioni accoppiate: confrontando A e B sullo stesso test set, possiamo confrontare le loro prestazioni sulla stessa osservazione $x_i$.
+
+\subsection{Il paired bootstrap test}
+Il \textbf{bootstrap test} \cite{efron1993} si può applicare a qualsiasi metrica (accuracy, precision, recall, F1, \dots). Il termine \textit{bootstrap} indica l'estrazione ripetuta, con reinserimento, di molti campioni (detti \textbf{bootstrap sample}) da un campione originale più grande. L'unica assunzione è che il campione originale sia rappresentativo della popolazione.
+
+Forniamo il seguente esempio: un test set $x$ di 10 documenti, con l'accuratezza come metrica. Ogni documento ha uno di quattro esiti: A e B corretti, A e B sbagliati, A corretto e B sbagliato, A sbagliato e B corretto. A ha un'accuratezza di .70 e B di .50, quindi $\delta(x) = .20$. Creiamo ora un gran numero $b$, ad esempio $10\,000$, di test set virtuali $x^{(i)}$, ognuno di dimensione $n = 10$: per costruire ciascuno estraiamo a caso una cella della riga $x$, con reinserimento, per 10 volte (figura~\ref{fig:bootstrap}).
+
+Ora abbiamo una distribuzione, e possiamo controllare quanto spesso A ha un vantaggio accidentale. Assumendo $H_0$ ci aspetteremmo $\delta(x') = 0$, quindi potremmo contare quante volte il $\delta(x^{(i)})$ trovato supera il valore atteso 0 di $\delta(x)$ o più:
+\begin{equation}
+\text{p-value}(x) = \frac{1}{b} \sum_{i=1}^{b} \mathbf{1}\big(\delta(x^{(i)}) - \delta(x) \geq 0\big)
+\end{equation}
+dove $\mathbf{1}(\cdot)$ vale 1 se la condizione è soddisfatta e 0 altrimenti. In realtà è un po' più complicato: i campioni non vengono da una distribuzione con media 0, ma dal test set originale $x$, che è sbilanciato di .20 a favore di A. Per misurare quanto è sorprendente il $\delta(x)$ osservato contiamo quindi quante volte $\delta(x^{(i)})$ supera il valore atteso $\delta(x)$ di $\delta(x)$ o più:
+\begin{equation}
+\text{p-value}(x) = \frac{1}{b} \sum_{i=1}^{b} \mathbf{1}\big(\delta(x^{(i)}) - \delta(x) \geq \delta(x)\big) = \frac{1}{b} \sum_{i=1}^{b} \mathbf{1}\big(\delta(x^{(i)}) \geq 2\delta(x)\big).
+\end{equation}
+Supponiamo ad esempio di avere $10\,000$ test set virtuali e una soglia di .01, e che solo in 47 di essi si abbia $\delta(x^{(i)}) \geq 2\delta(x)$. Il p-value è $.0047$, più piccolo di .01: il $\delta(x)$ osservato è abbastanza sorprendente, rifiutiamo l'ipotesi nulla e concludiamo che A è migliore di B. Con i 10 documenti del nostro esempio, invece, il risultato è molto diverso: la figura~\ref{fig:bootstrap} mostra che il p-value è circa .27, e la differenza di accuratezza non è significativa\footnote{Nell'algoritmo~\ref{alg:bootstrap} la condizione è stretta, $\delta(x^{(i)}) > 2\delta(x)$, mentre nella formula del p-value è $\geq$. Con un test set così piccolo $\delta$ assume pochi valori, e la differenza si vede: con la condizione stretta il p-value scende a circa .15, comunque sopra la soglia.}.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{bootstrap}[x={ab, a, ab, b, a, b, a, ab, -, a}, b=10000, seed=7]
+\begin{tikzpicture}[nlp, font=\scriptsize,
+  cl/.style={draw=RuleGray, minimum width=7.5mm, minimum height=5mm, inner sep=0, font=\scriptsize\sffamily}]
+  % \esito{x}{y}{A corretto}{B corretto}: una cella con A e B, in rosso e barrati se sbagliano
+  \newcommand{\esito}[4]{\node[cl] at (#1,#2) {\ifnum#3=1 \textcolor{Accent}{\textbf{A}}\else\textcolor{red!70!black}{\sout{A}}\fi
+    \ifnum#4=1 \textcolor{Accent}{\textbf{B}}\else\textcolor{red!70!black}{\sout{B}}\fi};}
+  \foreach \i in {1,...,10} \node at (0.8*\i,0.5) {\i};
+  \node at (8.95,0.5) {A\%}; \node at (9.75,0.5) {B\%}; \node at (10.55,0.5) {$\delta$};
+  \foreach \yy/\nome/\cells/\aa/\bb/\dd in {
+      0/{$x$}/{1/1, 1/0, 1/1, 0/1, 1/0, 0/1, 1/0, 1/1, 0/0, 1/0}/.70/.50/.20,
+      -0.6/{$x^{(1)}$}/{1/1, 1/1, 1/0, 1/0, 0/1, 1/0, 1/0, 1/1, 0/1, 1/1}/.80/.60/.20,
+      -1.2/{$x^{(2)}$}/{1/1, 1/0, 1/1, 0/1, 1/0, 0/1, 1/1, 0/1, 1/1, 1/0}/.70/.70/.00,
+      -1.8/{$x^{(3)}$}/{1/1, 0/0, 1/0, 1/0, 1/0, 1/1, 0/1, 1/1, 1/1, 1/0}/.80/.50/.30} {
+    \node[anchor=east] at (0.35,\yy) {\nome};
+    \foreach \a/\b [count=\i] in \cells { \esito{0.8*\i}{\yy}{\a}{\b} }
+    \node at (8.95,\yy) {\aa}; \node at (9.75,\yy) {\bb}; \node[FigColor] at (10.55,\yy) {\dd};
+  }
+  \node at (0.8,-2.35) {$\vdots$};
+  % istogramma di delta(x(i)) su b = 10000 campioni (seme 7)
+  \begin{scope}[xshift=5.3cm, yshift=-6.4cm, x=0.5cm, y=0.0021cm]
+    \foreach \d/\c in {-8/1, -7/1, -6/12, -5/23, -4/80, -3/207, -2/413, -1/720, 0/1096, 1/1492, 2/1695, 3/1514,
+        4/1294, 5/817, 6/404, 7/169, 8/52, 9/8, 10/2} {
+      \ifnum\d<4 \fill[Accent!40] (\d+0.1,0) rectangle (\d+0.9,\c); \else \fill[ObsColor!70] (\d+0.1,0) rectangle (\d+0.9,\c); \fi
+    }
+    \draw[TextGray] (-10,0) -- (11,0);
+    \foreach \d in {-10,-8,...,10} \node[below, font=\tiny] at (\d+0.5,0) {\pgfmathparse{\d/10}\pgfmathprintnumber[fixed, precision=1]{\pgfmathresult}};
+    \draw[ObsColor, thick, dashed] (4,0) -- (4,1850) node[above, font=\scriptsize] {$2\delta(x) = 0.40$};
+    \node[anchor=west, align=left, font=\scriptsize] at (-10,1500) {$\delta(x^{(i)})$ su $b = 10\,000$ campioni:\\2746 campioni con $\delta(x^{(i)}) \geq 2\delta(x)$\\p-value $\approx 2746/10\,000 = .27$};
+  \end{scope}
+\end{tikzpicture}
+\end{widget}
+\caption{Il paired bootstrap test sul test set $x$ di 10 documenti: A e B sono in rosso e barrati quando sbagliano. Ogni test set virtuale $x^{(i)}$ si ottiene estraendo 10 celle di $x$ con reinserimento. Sotto, l'istogramma di $\delta(x^{(i)})$ su $10\,000$ campioni: quelli con $\delta(x^{(i)}) \geq 2\delta(x) = 0.40$ (in arancione) sono il 27\%, quindi il vantaggio di A non è significativo.}
+\label{fig:bootstrap}
+\end{figure}
+
+L'algoritmo completo, nella versione di Berg-Kirkpatrick et al.\ \cite{berg2012}, è l'algoritmo~\ref{alg:bootstrap}. Una sua implementazione è disponibile nel pacchetto Python \texttt{boostsa} \cite{fornaciari2022}.
+
+\begin{algorithm}[htbp]
+\caption{Il paired bootstrap test.}
+\label{alg:bootstrap}
+\begin{algorithmic}[1]
+\Function{Bootstrap}{test set $x$, numero di campioni $b$}
+  \State calcola $\delta(x)$ \Comment{di quanto A è migliore di B su $x$}
+  \State $s \gets 0$
+  \For{$i = 1$ to $b$}
+    \For{$j = 1$ to $n$} \Comment{estrae un bootstrap sample $x^{(i)}$ di dimensione $n$}
+      \State scegli un elemento di $x$ a caso e aggiungilo a $x^{(i)}$
+    \EndFor
+    \State calcola $\delta(x^{(i)})$ \Comment{di quanto A è migliore di B su $x^{(i)}$}
+    \State $s \gets s + 1$ se $\delta(x^{(i)}) > 2\delta(x)$
+  \EndFor
+  \State $\text{p-value}(x) \approx s / b$ \Comment{in che percentuale dei campioni A ha battuto le attese?}
+  \State \Return p-value$(x)$ \Comment{se sono pochissimi, il $\delta$ osservato non è un caso}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\section{Danni nei classificatori}
+I classificatori possono causare danni concreti. Kiritchenko e Mohammad \cite{kiritchenko2018} hanno trovato che la maggior parte dei classificatori di sentiment assegna un sentiment più basso, ed emozioni più negative, alle frasi che contengono nomi afroamericani, perpetuando gli stereotipi che associano gli afroamericani alle emozioni negative.
+
+Allo stesso modo, la \textbf{toxicity detection} è il task di rilevare hate speech, abusi, molestie o altri tipi di linguaggio tossico. Alcuni classificatori di tossicità, però, segnalano come tossiche frasi che non lo sono e che si limitano a menzionare delle identità, come le persone cieche, le donne o le persone gay. Questo può portare a censurare le discussioni su questi gruppi.
+
+Questi danni possono avere diverse cause. Possono esserci problemi nei dati di training (è noto che i sistemi di machine learning amplificano i bias dei dati), nelle etichette assegnate dagli annotatori o nelle risorse usate, come i lessici. Oppure il problema può essere nell'architettura del modello, ad esempio in cosa il modello è addestrato a ottimizzare. La mitigazione di questi danni è un'area di ricerca aperta. Nel frattempo, una buona pratica è rilasciare ogni modello con una \textbf{model card} \cite{mitchell2019}, che documenta:
+\begin{itemize}
+    \item gli algoritmi e i parametri di training;
+    \item le fonti dei dati di training, le motivazioni e il pre-processing;
+    \item le fonti dei dati di valutazione, le motivazioni e il pre-processing;
+    \item l'uso e gli utenti previsti;
+    \item le prestazioni del modello su diversi gruppi demografici e in diverse situazioni.
+\end{itemize}

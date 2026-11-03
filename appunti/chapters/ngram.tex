@@ -1,0 +1,407 @@
+\chapter{Modelli di linguaggio N-gram}\label{ch:ngram}
+L'obiettivo di questo capitolo è \textbf{assegnare una probabilità a una frase}. A cosa serve? Ad esempio:
+\begin{itemize}
+    \item nella \textbf{traduzione automatica}, $P(\text{high winds tonight}) > P(\text{large winds tonight})$ ci dice quale delle due traduzioni è più naturale;
+    \item nella \textbf{correzione ortografica}, in \enquote{The office is about fifteen minuets from my house} il modello dovrebbe accorgersi che \[P(\text{about fifteen minutes from}) > P(\text{about fifteen minuets from});\]
+    \item nel \textbf{riconoscimento del parlato}, $P(\text{I saw a van}) \gg P(\text{eyes awe of an})$, anche se le due sequenze suonano quasi uguali;
+\end{itemize}
+e lo stesso vale per il riassunto automatico, il question answering e molti altri task. Il motivo più importante, però, è un altro: i Large Language Models (sezione~\ref{sec:llm}) sono addestrati proprio a predire la parola successiva. In questo capitolo vediamo il modello di linguaggio più semplice, il modello \textbf{N-gram}, seguendo il capitolo 3 e l'appendice C di \cite{jurafsky2026slp}. È un modello che si formalizza in modo molto chiaro, e per questo ci permette di introdurre concetti che ritroveremo anche con i modelli neurali: training e test set, perplexity, campionamento e smoothing.
+
+\section{Modelli di linguaggio probabilistici}
+Ricordiamo la definizione di probabilità condizionata, che possiamo riscrivere come:
+\[
+P(B \mid A) = \frac{P(A, B)}{P(A)} \qquad \Longrightarrow \qquad P(A, B) = P(A)\, P(B \mid A)
+\]
+dove scriviamo $P(A, B)$ al posto di $P(A \cap B)$. Con più variabili si ottiene $P(A, B, C, D) = P(A)\, P(B \mid A)\, P(C \mid A, B)\, P(D \mid A, B, C)$, e in generale la \textbf{regola della catena} (chain rule):
+\begin{equation}
+P(X_{1:n}) = P(X_1)\, P(X_2 \mid X_1) \cdots P(X_n \mid X_{1:n-1}) = \prod_{i=1}^{n} P(X_i \mid X_{1:i-1})
+\end{equation}
+dove $X_{1:n}$ indica la sequenza $X_1 X_2 \dots X_n$.
+
+L'obiettivo è calcolare la probabilità di una sequenza di parole, $P(W_{1:n}) = P(W_1 W_2 \dots W_n)$. Un task collegato è calcolare la probabilità della parola successiva, $P(W_n \mid W_{1:n-1})$. Un modello che calcola una di queste due quantità si chiama \textbf{modello di linguaggio} (language model, LM).
+
+\paragraph{I due task sono equivalenti.} Se sappiamo calcolare $P(W_{1:n})$, otteniamo la probabilità della parola successiva dalla definizione di probabilità condizionata:
+\[
+P(W_n \mid W_{1:n-1}) = \frac{P(W_{1:n-1}, W_n)}{P(W_{1:n-1})} = \frac{P(W_{1:n})}{P(W_{1:n-1})}.
+\]
+Viceversa, se sappiamo calcolare $P(W_n \mid W_{1:n-1})$, otteniamo $P(W_{1:n})$ con la regola della catena:
+\begin{equation}\label{eq:chain-words}
+P(W_{1:n}) = \prod_{i=1}^{n} P(W_i \mid W_{1:i-1}).
+\end{equation}
+Ad esempio:
+\begin{align*}
+P(\text{its water is so transparent}) = {} & P(\text{its})\, P(\text{water} \mid \text{its})\, P(\text{is} \mid \text{its water}) \\
+& \cdot P(\text{so} \mid \text{its water is})\, P(\text{transparent} \mid \text{its water is so}).
+\end{align*}
+
+\paragraph{Basta contare?} Come stimiamo queste probabilità? Si potrebbe pensare di contare e dividere:
+\[
+P(\text{the} \mid \text{its water is so transparent that}) = \frac{C(\text{its water is so transparent that the})}{C(\text{its water is so transparent that})}
+\]
+dove $C(\cdot)$ è il numero di volte che una sequenza compare in un corpus. L'idea non è sbagliata, ma non funziona: le frasi possibili sono troppe, il linguaggio è creativo e frasi nuove vengono inventate di continuo. Nemmeno l'intero web basterebbe ad avere stime affidabili per sequenze così lunghe.
+
+\section{L'assunzione di Markov}
+L'idea dei modelli N-gram è approssimare la storia con le sole ultime parole. Con l'\textbf{assunzione di Markov} scriviamo ad esempio:
+\[
+P(\text{the} \mid \text{its water is so transparent that}) \approx P(\text{the} \mid \text{that})
+\]
+oppure, guardando due parole indietro, $P(\text{the} \mid \text{transparent that})$. In altre parole, approssimiamo ogni fattore del prodotto~\eqref{eq:chain-words} guardando solo le $k-1$ parole precedenti\footnote{Con $k = 2$ si parla di bigrammi, con $k = 3$ di trigrammi, e in generale di N-gram. Il termine N-gram indica sia la sequenza di $N$ parole sia il modello probabilistico che la usa.}:
+\begin{equation}
+P(W_i \mid W_{1:i-1}) \approx P(W_i \mid W_{i-k+1:i-1}) \qquad \Longrightarrow \qquad P(W_{1:n}) \approx \prod_{i=1}^{n} P(W_i \mid W_{i-k+1:i-1}).
+\end{equation}
+
+Il caso più semplice è il modello \textbf{unigram}, in cui ogni parola è indipendente dalle altre: $P(W_{1:n}) \approx \prod_i P(W_i)$. Le frasi generate da un modello unigram sono sequenze di parole frequenti senza alcun legame tra loro, come \enquote{fifth an of futures the an incorporated a a the inflation most dollars quarter in is mass}.
+
+Il modello \textbf{bigram} condiziona invece sulla parola precedente, $P(W_i \mid W_{1:i-1}) \approx P(W_i \mid W_{i-1})$, e le frasi generate iniziano ad avere una coerenza locale: \enquote{texaco rose one in this issue is pursuing growth in a boiler house said mr. gurria mexico's motion control proposal without permission from five hundred fifty five yen}.
+
+Possiamo estendere il modello a trigrammi, 4-grammi e 5-grammi. In generale un modello N-gram non è un modello sufficiente del linguaggio, perché il linguaggio ha dipendenze a lunga distanza. In \enquote{The computer which I had just put into the machine room on the fifth floor crashed}, ad esempio, \textit{crashed} dipende da \textit{computer}, che si trova quindici parole prima. Nella pratica, però, i modelli N-gram funzionano spesso abbastanza bene.
+
+\section{Stimare le probabilità}
+Il modo più intuitivo per stimare le probabilità di un modello N-gram è la \textbf{stima di massima verosimiglianza} (maximum likelihood estimate, MLE). La MLE dei parametri di un modello $M$ su un training set $T$ è quella che massimizza la verosimiglianza di $T$ dato $M$, ovvero $P(T \mid M)$.
+
+Forniamo il seguente esempio: la parola \textit{bagel} compare 400 volte in un corpus di un milione di parole. Qual è la probabilità che una parola presa a caso da un altro testo sia \textit{bagel}? La MLE è $400/1\,000\,000 = 0.0004$. Potrebbe essere una pessima stima per un altro corpus, ma è la stima che rende più probabile che \textit{bagel} compaia 400 volte in un corpus di un milione di parole.
+
+Per i bigrammi, la MLE si ottiene contando le occorrenze del bigramma e normalizzando:
+\begin{equation}\label{eq:bigram-mle}
+P(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i)}{\sum_w C(w_{i-1} w)} = \frac{C(w_{i-1} w_i)}{C(w_{i-1})}
+\end{equation}
+dove il secondo passaggio vale perché la somma dei conteggi di tutti i bigrammi che iniziano con $w_{i-1}$ è proprio il conteggio dell'unigramma $w_{i-1}$. Il rapporto tra la frequenza di una sequenza e quella del suo prefisso si chiama \textbf{frequenza relativa}.
+
+\paragraph{Un esempio.} Consideriamo un mini corpus di tre frasi, a cui aggiungiamo il simbolo \texttt{<s>} all'inizio, per avere il contesto della prima parola, e il simbolo \texttt{</s>} alla fine\footnote{Il simbolo di fine frase serve a ottenere una vera distribuzione di probabilità: senza di esso, sommerebbero a 1 solo le probabilità delle frasi di una certa lunghezza, e il modello definirebbe una distribuzione diversa per ogni lunghezza.}:
+\begin{center}
+\texttt{<s> I am Sam </s>} \qquad \texttt{<s> Sam I am </s>} \qquad \texttt{<s> I do not like green eggs and ham </s>}
+\end{center}
+Alcune probabilità stimate con l'equazione~\eqref{eq:bigram-mle} sono:
+\[
+\begin{array}{lll}
+P(\text{I} \mid \texttt{<s>}) = \frac{2}{3} = 0.67 & P(\text{Sam} \mid \texttt{<s>}) = \frac{1}{3} = 0.33 & P(\text{am} \mid \text{I}) = \frac{2}{3} = 0.67 \\[4pt]
+P(\texttt{</s>} \mid \text{Sam}) = \frac{1}{2} = 0.5 & P(\text{Sam} \mid \text{am}) = \frac{1}{2} = 0.5 & P(\text{do} \mid \text{I}) = \frac{1}{3} = 0.33
+\end{array}
+\]
+Queste probabilità sono i \textbf{parametri} del modello, ed è proprio quello che memorizziamo.
+
+\subsection{Il Berkeley Restaurant Project}
+Passiamo a un corpus reale, anche se piccolo: le frasi del \textit{Berkeley Restaurant Project} (BeRP), un sistema di dialogo che rispondeva a domande su un database di ristoranti di Berkeley. Le frasi sono richieste come \enquote{can you tell me about any good cantonese restaurants close by}, \enquote{tell me about chez panisse} o \enquote{i'm looking for a good place to eat breakfast}. La tabella~\ref{tab:berp-counts} riporta i conteggi di alcuni bigrammi, calcolati su 9222 frasi\footnote{Le slide parlano di 9222 frasi, il libro di 9332. Il corpus è disponibile in \url{https://github.com/wooters/berp-trans}.}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l|rrrrrrrr}
+\toprule
+ & i & want & to & eat & chinese & food & lunch & spend \\
+\midrule
+i & 5 & 827 & 0 & 9 & 0 & 0 & 0 & 2 \\
+want & 2 & 0 & 608 & 1 & 6 & 6 & 5 & 1 \\
+to & 2 & 0 & 4 & 686 & 2 & 0 & 6 & 211 \\
+eat & 0 & 0 & 2 & 0 & 16 & 2 & 42 & 0 \\
+chinese & 1 & 0 & 0 & 0 & 0 & 82 & 1 & 0 \\
+food & 15 & 0 & 15 & 0 & 1 & 4 & 0 & 0 \\
+lunch & 2 & 0 & 0 & 0 & 0 & 1 & 0 & 0 \\
+spend & 1 & 0 & 1 & 0 & 0 & 0 & 0 & 0 \\
+\midrule
+unigram & 2533 & 927 & 2417 & 746 & 158 & 1093 & 341 & 278 \\
+\bottomrule
+\end{tabular}
+\caption{Conteggi dei bigrammi per otto parole del Berkeley Restaurant Project: la cella nella riga \textit{i} e nella colonna \textit{want} indica che \textit{want} segue \textit{i} 827 volte. In fondo, i conteggi degli unigrammi. La maggior parte dei valori è zero.}
+\label{tab:berp-counts}
+\end{table}
+
+Dividendo ogni riga per il conteggio dell'unigramma corrispondente si ottengono le probabilità della tabella~\ref{tab:berp-probs}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l|llllllll}
+\toprule
+ & i & want & to & eat & chinese & food & lunch & spend \\
+\midrule
+i & 0.002 & 0.33 & 0 & 0.0036 & 0 & 0 & 0 & 0.00079 \\
+want & 0.0022 & 0 & 0.66 & 0.0011 & 0.0065 & 0.0065 & 0.0054 & 0.0011 \\
+to & 0.00083 & 0 & 0.0017 & 0.28 & 0.00083 & 0 & 0.0025 & 0.087 \\
+eat & 0 & 0 & 0.0027 & 0 & 0.021 & 0.0027 & 0.056 & 0 \\
+chinese & 0.0063 & 0 & 0 & 0 & 0 & 0.52 & 0.0063 & 0 \\
+food & 0.014 & 0 & 0.014 & 0 & 0.00092 & 0.0037 & 0 & 0 \\
+lunch & 0.0059 & 0 & 0 & 0 & 0 & 0.0029 & 0 & 0 \\
+spend & 0.0036 & 0 & 0.0036 & 0 & 0 & 0 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\caption{Probabilità dei bigrammi della tabella~\ref{tab:berp-counts}, ottenute dividendo ogni riga per il conteggio dell'unigramma.}
+\label{tab:berp-probs}
+\end{table}
+
+Con qualche altra probabilità, come $P(\text{i} \mid \texttt{<s>}) = 0.25$, $P(\text{english} \mid \text{want}) = 0.0011$, $P(\text{food} \mid \text{english}) = 0.5$ e $P(\texttt{</s>} \mid \text{food}) = 0.68$, possiamo calcolare la probabilità di una frase moltiplicando le probabilità dei suoi bigrammi:
+\begin{align*}
+P(\texttt{<s>}\ \text{i want english food}\ \texttt{</s>}) &= P(\text{i} \mid \texttt{<s>})\, P(\text{want} \mid \text{i})\, P(\text{english} \mid \text{want}) \\
+&\quad \cdot P(\text{food} \mid \text{english})\, P(\texttt{</s>} \mid \text{food}) \\
+&= 0.25 \times 0.33 \times 0.0011 \times 0.5 \times 0.68 = 0.000031.
+\end{align*}
+
+\paragraph{Che tipo di conoscenza c'è nei bigrammi?} Alcune probabilità codificano fatti sintattici: $P(\text{to} \mid \text{want}) = 0.66$ dice che dopo \textit{want} viene spesso un infinito, $P(\text{eat} \mid \text{to}) = 0.28$ che dopo \textit{to} viene spesso un verbo, mentre $P(\text{food} \mid \text{to}) = 0$ e $P(\text{want} \mid \text{spend}) = 0$. Altre riguardano il task: $P(\text{i} \mid \texttt{<s>}) = 0.25$ riflette il fatto che le richieste a un assistente iniziano spesso con \textit{I}. Altre ancora sono culturali più che linguistiche: $P(\text{chinese} \mid \text{want}) = 0.0065$ è molto più alta di $P(\text{english} \mid \text{want}) = 0.0011$.
+
+\subsection{Problemi pratici}
+Le probabilità sono numeri minori di 1, e più ne moltiplichiamo più il prodotto diventa piccolo, fino all'underflow. Per questo i calcoli si fanno sempre nello spazio dei logaritmi:
+\[
+\log(p_1 \cdot p_2 \cdot p_3) = \log p_1 + \log p_2 + \log p_3
+\]
+e in più sommare è più veloce che moltiplicare. Per costruire modelli N-gram reali si usano toolkit come SRILM e KenLM (utilizzabile anche in Python). Nel 2006 Google ha rilasciato un corpus di N-gram calcolato su mille miliardi di parole del web. Al suo interno, ad esempio, \textit{serve as the incubator} compare 99 volte, \textit{serve as the independent} 794 volte e \textit{serve as the index} 223 volte.
+
+\begin{esercizio}[KenLM sul Berkeley Restaurant Project]
+Calcolare la probabilità e la perplexity (sezione~\ref{sec:perplexity}) di un testo a piacere, usando un modello a bigrammi addestrato sul Berkeley Restaurant Project con il toolkit KenLM (\url{https://github.com/kpu/kenlm}).
+\end{esercizio}
+
+\section{Valutare un modello di linguaggio}
+Il nostro modello preferisce le frasi buone a quelle cattive? In altre parole, assegna una probabilità più alta alle frasi \enquote{reali} o osservate spesso, e più bassa a quelle sgrammaticate o rare? Per rispondere servono tre ingredienti:
+\begin{itemize}
+    \item un \textbf{training set}, su cui stimiamo i parametri del modello;
+    \item un \textbf{test set}, un insieme di dati mai visto, diverso dal training set e mai usato in fase di training, su cui misuriamo le prestazioni;
+    \item una \textbf{metrica di valutazione}, che ci dice quanto è buono il modello sul test set.
+\end{itemize}
+Il test set non deve finire nel training set: se una frase di test è anche nel corpus di training, il modello le assegna una probabilità artificialmente alta (si parla di \textit{data contamination}). Per lo stesso motivo, il libro consiglia di usare il test set una sola volta, alla fine, e di fare tutte le prove su un terzo insieme, il \textbf{development set} (o devset).
+
+\paragraph{Valutazione estrinseca e intrinseca.} Il modo migliore per confrontare due modelli A e B è la \textbf{valutazione estrinseca} (o \textit{in vivo}): si inserisce ciascun modello in un task, come un correttore ortografico, un riconoscitore del parlato o un sistema di traduzione. Si esegue poi il task e si confrontano le accuratezze ottenute (quante parole errate sono state corrette, quante parole sono state tradotte correttamente). Il problema è che la valutazione estrinseca richiede molto tempo, anche giorni o settimane. Per questo si usa spesso una \textbf{valutazione intrinseca}, che misura la qualità del modello indipendentemente da qualsiasi applicazione: la \textbf{perplexity}.
+
+\subsection{Perplexity}\label{sec:perplexity}
+L'intuizione è quella dello \textbf{Shannon game}: quanto bene riusciamo a predire la parola successiva? Pensiamo a frasi come \enquote{I always order pizza with cheese and \dots}, \enquote{The 33rd President of the US was \dots} o \enquote{I saw a \dots}. Un buon modello, dopo la prima, assegna probabilità alte a \textit{mushrooms} (0.1) e \textit{pepperoni} (0.1), più basse ad \textit{anchovies} (0.01) e bassissime a \textit{fried rice} (0.0001) o ad \textit{and} ($10^{-100}$).
+
+Gli unigrammi sono pessimi in questo gioco, perché ignorano completamente il contesto. Un modello è quindi migliore se assegna una probabilità più alta alla parola che compare davvero.
+
+La \textbf{perplexity} è l'inverso della probabilità del test set, normalizzato per il numero di parole:
+\begin{equation}
+\PP(W) = P(W_{1:n})^{-\frac{1}{n}} = \sqrt[n]{\frac{1}{P(W_{1:n})}}.
+\end{equation}
+Con la regola della catena, e poi con l'approssimazione a bigrammi, diventa:
+\begin{equation}
+\PP(W) = \sqrt[n]{\prod_{i=1}^{n} \frac{1}{P(W_i \mid W_{1:i-1})}} \qquad \text{e} \qquad \PP(W) = \sqrt[n]{\prod_{i=1}^{n} \frac{1}{P(W_i \mid W_{i-1})}}.
+\end{equation}
+Per via dell'inverso, \textbf{minimizzare la perplexity equivale a massimizzare la probabilità} del test set: il modello migliore è quello che predice meglio un testo mai visto, ovvero che gli assegna la probabilità più alta. La normalizzazione per $n$ serve invece a rendere la misura indipendente dalla lunghezza del testo, visto che la probabilità di un testo diminuisce man mano che il testo si allunga.
+
+\paragraph{Perplexity come fattore di ramificazione.} La perplexity si può interpretare come il \textbf{fattore di ramificazione medio pesato}, ovvero il numero medio di parole tra cui il modello deve scegliere a ogni passo. Supponiamo che una frase sia composta da $n$ cifre casuali, e che il modello assegni probabilità $P(W_i) = 1/10$ a ogni cifra. La perplexity della frase è:
+\[
+\PP(W_{1:n}) = P(W_{1:n})^{-\frac{1}{n}} = \left(\left(\frac{1}{10}\right)^{n}\right)^{-\frac{1}{n}} = \left(\frac{1}{10}\right)^{-1} = 10
+\]
+ovvero il modello è \enquote{perplesso} come se a ogni passo dovesse scegliere tra 10 alternative equiprobabili.
+
+Un esempio meno banale è quello di Josh Goodman. Un sistema di smistamento delle chiamate riceve 120 mila chiamate e deve riconoscere \textit{R\&D}, \textit{Sales} e \textit{Technical Support}, ognuna in una chiamata su quattro. Nella chiamata restante deve invece riconoscere uno tra 30 mila nomi di persona, per cui ogni nome compare una volta sola nelle 120 mila chiamate.
+
+La perplexity della sequenza di 120 mila chiamate si ottiene moltiplicando 120 mila probabilità, di cui 90 mila valgono $1/4$ e 30 mila valgono $1/120\,000$, e prendendo la radice 120 millesima dell'inverso. Il calcolo si semplifica in:
+\[
+\PP = \left(\frac{1}{4} \cdot \frac{1}{4} \cdot \frac{1}{4} \cdot \frac{1}{120\,000}\right)^{-\frac{1}{4}} = 52.6
+\]
+che è molto meno dei 30 mila nomi possibili, perché tre quarti delle chiamate sono facili da predire.
+
+\paragraph{Una perplexity più bassa indica un modello migliore.} Addestrando modelli unigram, bigram e trigram su 38 milioni di parole del Wall Street Journal e calcolando la perplexity su un test set di 1.5 milioni di parole si ottiene:
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+Ordine dell'N-gram & Unigram & Bigram & Trigram \\
+\midrule
+Perplexity & 962 & 170 & 109 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Più contesto usa il modello, meno è sorpreso dalla parola successiva. Due perplexity sono però confrontabili solo se i modelli usano lo stesso vocabolario, e un miglioramento della perplexity non garantisce un miglioramento nel task finale: quando possibile, va confermato con una valutazione estrinseca.
+
+\section{Generalizzazione e zeri}
+\subsection{Il metodo di visualizzazione di Shannon}
+Un modo per capire che tipo di conoscenza contiene un modello di linguaggio è \textbf{campionare} frasi da esso. Con i bigrammi la procedura è questa:
+\begin{enumerate}
+    \item scegliamo un bigramma casuale $(\texttt{<s>}, w)$ secondo la sua probabilità;
+    \item scegliamo un bigramma casuale $(w, x)$ secondo la sua probabilità, e così via finché non scegliamo \texttt{</s>};
+    \item mettiamo insieme le parole.
+\end{enumerate}
+Ad esempio, da \texttt{<s> I}, \texttt{I want}, \texttt{want to}, \texttt{to eat}, \texttt{eat Chinese}, \texttt{Chinese food}, \texttt{food </s>} si ottiene \enquote{I want to eat Chinese food}. Per scegliere una parola \enquote{secondo la sua probabilità} immaginiamo che le parole che possono seguire il contesto coprano l'intervallo $[0, 1]$, ognuna con un sotto-intervallo lungo quanto la sua probabilità: estraiamo un numero a caso tra 0 e 1 e scegliamo la parola il cui intervallo lo contiene (figura~\ref{fig:shannon}).
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{shannon}[corpus={I am Sam, Sam I am, I do not like green eggs and ham}, r={0.41, 0.18, 0.3, 0.22}]
+\begin{tikzpicture}[nlp, font=\small, x=9cm,
+  seg/.style={draw=TextGray, fill=Accent!10, minimum height=6mm, inner sep=0},
+  sel/.style={draw=FigColor, fill=FigColor!25, thick}]
+  \newcommand{\riga}[4]{% y, contesto, intervalli parola/inizio/fine/stile, numero estratto
+    \node[anchor=east, font=\small\ttfamily] at (-0.02,#1) {P(w | #2)};
+    \foreach \w/\a/\b/\st in {#3} {
+      \draw[seg, \st] (\a,#1-0.3) rectangle (\b,#1+0.3);
+      \node[font=\scriptsize\ttfamily] at ({(\a+\b)/2},#1) {\w};
+    }
+    \draw[red!70!black, very thick] (#4,#1-0.42) -- (#4,#1+0.42) node[above, font=\scriptsize] {$r = #4$};}
+  \riga{0}{<s>}{I/0/0.667/sel, Sam/0.667/1/}{0.41}
+  \riga{-1.25}{I}{am/0/0.667/sel, do/0.667/1/}{0.18}
+  \riga{-2.5}{am}{Sam/0/0.5/sel, {</s>}/0.5/1/}{0.30}
+  \riga{-3.75}{Sam}{{</s>}/0/0.5/sel, I/0.5/1/}{0.22}
+  \node[font=\scriptsize\ttfamily, TextGray] at (0,-4.35) {0};
+  \node[font=\scriptsize\ttfamily, TextGray] at (1,-4.35) {1};
+  \node[anchor=west, font=\small] at (0,-5) {frase generata: \texttt{<s> I am Sam </s>}, \quad $P = \frac{2}{3} \cdot \frac{2}{3} \cdot \frac{1}{2} \cdot \frac{1}{2} = 0.111$};
+\end{tikzpicture}
+\end{widget}
+\caption{Il metodo di Shannon con il modello a bigrammi del mini corpus \texttt{I am Sam}, \texttt{Sam I am}, \texttt{I do not like green eggs and ham}. A ogni passo le parole che possono seguire il contesto si dividono l'intervallo $[0, 1]$ in proporzione alla loro probabilità, e il numero estratto $r$ sceglie la parola (evidenziata). La frase si ferma quando esce \texttt{</s>}.}
+\label{fig:shannon}
+\end{figure}
+
+Il campionamento mostra bene quanto il modello dipenda dal corpus di training. Con modelli addestrati sulle opere di Shakespeare, le frasi generate dagli unigrammi non hanno alcuna coerenza, quelle dei bigrammi hanno una coerenza locale tra parole vicine, e quelle dei trigrammi e dei 4-grammi iniziano ad assomigliare molto a Shakespeare.
+
+Anche troppo: la frase \enquote{It cannot be but so}, generata dal modello a 4-grammi, è presa direttamente dal \textit{King John}. Il motivo è che Shakespeare, come corpus, è piccolo: ha $N = 884\,647$ token e $V = 29\,066$ type, e ha prodotto circa 300 mila tipi di bigrammi su $V^2 \approx 844$ milioni di bigrammi possibili. Il 99.96\% dei bigrammi possibili non è mai stato visto, e con i 4-grammi va ancora peggio: quello che esce sembra Shakespeare perché \textit{è} Shakespeare.
+
+\subsection{Il pericolo dell'overfitting}
+Gli N-gram predicono bene le parole solo se il corpus di test assomiglia al corpus di training, e nella realtà spesso non è così. Un modello addestrato su Shakespeare e uno addestrato sul Wall Street Journal generano frasi che \enquote{sembrano inglese} entrambe, ma che non hanno quasi niente in comune. Dobbiamo quindi addestrare modelli che generalizzino, e un tipo di generalizzazione riguarda gli \textbf{zeri}: sequenze che non compaiono mai nel training set ma compaiono nel test set. Supponiamo ad esempio che il training set contenga
+\begin{center}
+\dots \textit{denied the allegations} \qquad \dots \textit{denied the reports} \qquad \dots \textit{denied the claims} \qquad \dots \textit{denied the request}
+\end{center}
+e che nel test set compaiano invece \dots \textit{denied the offer} e \dots \textit{denied the loan}. La stima MLE dà $P(\text{offer} \mid \text{denied the}) = 0$. I bigrammi con probabilità zero sono un problema doppio: sottostimano la probabilità di sequenze perfettamente plausibili, e fanno sì che l'intero test set abbia probabilità 0, per cui non possiamo nemmeno calcolare la perplexity (non si può dividere per 0).
+
+\paragraph{Parole sconosciute.} Un caso particolare di zero sono le parole mai viste. Se conosciamo in anticipo tutte le parole, il vocabolario $V$ è fisso e si parla di task a \textbf{vocabolario chiuso}. Spesso però non è così, e nel test compaiono parole \textbf{fuori vocabolario} (out of vocabulary, OOV): si parla allora di task a \textbf{vocabolario aperto}.
+
+La soluzione classica è un token speciale \texttt{<UNK>}: si fissa un lessico $L$ di dimensione $V$, in fase di normalizzazione si sostituisce con \texttt{<UNK>} ogni parola del training che non è in $L$, e si stimano le probabilità di \texttt{<UNK>} come quelle di una parola normale. In fase di decodifica, ogni parola mai vista prende le probabilità di \texttt{<UNK>}\footnote{Il libro osserva che con la tokenizzazione in sottoparole (sezione~\ref{sec:bpe}) il problema scompare: qualsiasi parola si può scrivere come sequenza di token noti, al limite di singole lettere, e il test set non contiene mai token sconosciuti.}.
+
+\section{Smoothing}
+L'intuizione dello \textbf{smoothing} (o \textit{discounting}) è che, quando le statistiche sono sparse, conviene \enquote{rubare} un po' di massa di probabilità agli eventi visti per darla a quelli mai visti, e generalizzare meglio. Torniamo all'esempio di \textit{denied the}: nel training abbiamo visto 3 volte \textit{allegations}, 2 volte \textit{reports}, una volta \textit{claims} e una volta \textit{request}, per un totale di 7. Invece di $3/7$, $2/7$, $1/7$ e $1/7$, possiamo usare ad esempio $2.5/7$, $1.5/7$, $0.5/7$ e $0.5/7$, e lasciare $2/7$ a tutte le altre parole (\textit{attack}, \textit{man}, \textit{outcome}, \dots).
+
+\subsection{Laplace smoothing}
+Il modo più semplice di fare smoothing è il \textbf{Laplace smoothing} (o add-one): facciamo finta di aver visto ogni parola una volta in più di quante l'abbiamo vista davvero, ovvero aggiungiamo 1 a tutti i conteggi. Dato che ognuna delle $|V|$ parole del vocabolario riceve un conteggio in più, anche il denominatore deve crescere di $|V|$:
+\begin{equation}\label{eq:laplace}
+P_{\text{MLE}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i)}{C(w_{i-1})} \qquad \longrightarrow \qquad P_{\text{Add-1}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i) + 1}{C(w_{i-1}) + |V|}.
+\end{equation}
+Una generalizzazione è l'\textbf{add-$k$ smoothing}, in cui si aggiunge un conteggio frazionario $k$ (0.5? 0.01?) al posto di 1, e il denominatore diventa $C(w_{i-1}) + k|V|$. Il valore di $k$ va scelto, ad esempio, sul devset. La figura~\ref{fig:smoothing} mostra l'effetto sull'esempio di \textit{denied the}.
+
+\begin{figure}[htbp]
+\centering
+\begin{widget}{smoothing}[context=denied the, k=1]
+\begin{tikzpicture}[nlp, font=\small, y=8cm,
+  mle/.style={draw=Accent, fill=Accent!35},
+  add/.style={draw=Accent, fill=Accent!35},
+  zero/.style={draw=red!70!black, fill=red!35}]
+  \newcommand{\barre}[3]{% x iniziale, titolo, lista parola/probabilità/stile
+    \node[font=\small] at (#1+2.1,0.5) {#2};
+    \draw[TextGray] (#1-0.1,0) -- (#1+4.3,0);
+    \foreach \w/\p/\st [count=\i] in {#3} {
+      \draw[\st] (#1+0.6*\i-0.6,0) rectangle (#1+0.6*\i-0.2,\p);
+      \node[font=\tiny, above] at (#1+0.6*\i-0.4,\p) {\p};
+      \node[font=\scriptsize\ttfamily, rotate=40, anchor=north east] at (#1+0.6*\i-0.3,-0.005) {\w};
+    }}
+  \barre{0}{MLE}{allegations/0.429/mle, reports/0.286/mle, claims/0.143/mle, request/0.143/mle, attack/0/zero, man/0/zero, outcome/0/zero}
+  \barre{5.6}{add-1, $|V| = 7$}{allegations/0.286/add, reports/0.214/add, claims/0.143/add, request/0.143/add, attack/0.071/zero, man/0.071/zero, outcome/0.071/zero}
+\end{tikzpicture}
+\end{widget}
+\caption{Add-one smoothing su $P(w \mid \text{denied the})$, con un vocabolario di sole 7 parole. A sinistra la stima MLE, in cui \textit{attack}, \textit{man} e \textit{outcome} hanno probabilità zero. A destra le probabilità smussate: ogni parola mai vista riceve $1/14$, e alle parole viste resta meno massa. Con il vocabolario del BeRP, $|V| = 1446$, le parole mai viste si prenderebbero il 99\% della massa.}
+\label{fig:smoothing}
+\end{figure}
+
+Applicando il Laplace smoothing ai bigrammi del BeRP (con $|V| = 1446$) cambia tutto. Per vedere di quanto, conviene ricostruire i \textbf{conteggi ricostituiti} $C^*$, ovvero i conteggi che, divisi per il denominatore originale $C(w_{i-1})$, darebbero la probabilità smussata:
+\begin{equation}
+C^*_{\text{Add-1}}(w_{i-1} w_i) = \frac{C(w_{i-1} w_i) + 1}{C(w_{i-1}) + |V|} \cdot C(w_{i-1}).
+\end{equation}
+Confrontando la tabella~\ref{tab:berp-recon} con la tabella~\ref{tab:berp-counts} si vede che $C(\text{want to})$ passa da 608 a 238, e allo stesso modo $P(\text{to} \mid \text{want})$ passa da 0.66 a 0.26. Il problema è che \textbf{troppa massa di probabilità viene spostata sugli zeri}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l|rrrrrrrr}
+\toprule
+ & i & want & to & eat & chinese & food & lunch & spend \\
+\midrule
+i & 3.8 & 527 & 0.64 & 6.4 & 0.64 & 0.64 & 0.64 & 1.9 \\
+want & 1.2 & 0.39 & 238 & 0.78 & 2.7 & 2.7 & 2.3 & 0.78 \\
+to & 1.9 & 0.63 & 3.1 & 430 & 1.9 & 0.63 & 4.4 & 133 \\
+eat & 0.34 & 0.34 & 1 & 0.34 & 5.8 & 1 & 15 & 0.34 \\
+chinese & 0.2 & 0.098 & 0.098 & 0.098 & 0.098 & 8.2 & 0.2 & 0.098 \\
+food & 6.9 & 0.43 & 6.9 & 0.43 & 0.86 & 2.2 & 0.43 & 0.43 \\
+lunch & 0.57 & 0.19 & 0.19 & 0.19 & 0.19 & 0.38 & 0.19 & 0.19 \\
+spend & 0.32 & 0.16 & 0.32 & 0.16 & 0.16 & 0.16 & 0.16 & 0.16 \\
+\bottomrule
+\end{tabular}
+\caption{Conteggi ricostituiti dopo l'add-one smoothing dei bigrammi del BeRP: rispetto alla tabella~\ref{tab:berp-counts} i conteggi alti si riducono di molto (\textit{want to} passa da 608 a 238), mentre gli zeri diventano numeri piccoli ma positivi.}
+\label{tab:berp-recon}
+\end{table}
+
+L'add-one smoothing è quindi uno strumento grezzo, e non si usa per gli N-gram: vedremo metodi migliori. Si usa però per fare smoothing in altri modelli di NLP, come la classificazione del testo (capitolo~\ref{ch:nb}), e in generale nei domini in cui gli zeri non sono così tanti.
+
+\subsection{Backoff e interpolazione}
+A volte conviene usare \textbf{meno contesto}, ovvero condizionare su un contesto più breve per i contesti di cui sappiamo poco. Le strategie sono due:
+\begin{itemize}
+    \item \textbf{Backoff}: usiamo il trigramma se ne abbiamo abbastanza evidenza, altrimenti il bigramma, altrimenti l'unigramma.
+    \item \textbf{Interpolazione}: mescoliamo sempre unigrammi, bigrammi e trigrammi.
+\end{itemize}
+In generale l'interpolazione funziona meglio. Nell'\textbf{interpolazione lineare} semplice la probabilità del trigramma è una media pesata delle tre stime:
+\begin{equation}
+\hat{P}(w_i \mid w_{i-2} w_{i-1}) = \lambda_1 P(w_i \mid w_{i-2} w_{i-1}) + \lambda_2 P(w_i \mid w_{i-1}) + \lambda_3 P(w_i), \qquad \sum_j \lambda_j = 1
+\end{equation}
+dove il vincolo sulla somma dei $\lambda_j$ garantisce che il risultato sia ancora una probabilità. In una versione più sofisticata, i pesi dipendono dal contesto, $\lambda_j = \lambda_j(w_{i-2} w_{i-1})$: se abbiamo conteggi affidabili per un certo bigramma, possiamo fidarci di più dei trigrammi che lo estendono e dar loro un peso più alto.
+
+\paragraph{Come scegliere i $\lambda$?} Si usa un \textbf{corpus held-out}, ovvero una parte dei dati tenuta da parte rispetto al training (e distinta dal test set). Si fissano le probabilità degli N-gram stimate sul training, e si cercano i $\lambda$ che danno la probabilità più alta al corpus held-out. Una procedura iterativa (nelle slide è presentata come Expectation-Maximization) fissa $\lambda_1$ e cerca $\lambda_2$, con $\lambda_3 = 1 - \lambda_1 - \lambda_2$, poi fissa $\lambda_2$ e cerca $\lambda_1$, e così via fino a convergenza.
+
+\subsection{N-gram su scala web}
+Con corpora enormi come Google N-grams servono accorgimenti specifici. Per lo spazio si fa \textbf{pruning}: si memorizzano solo gli N-gram con conteggio sopra una soglia, si eliminano i singleton degli N-gram di ordine più alto, oppure si usa un pruning basato sull'entropia. Per l'efficienza si usano strutture dati come i \textit{trie} e i \textit{Bloom filter} (che danno modelli di linguaggio approssimati). Inoltre si memorizzano le parole come indici e non come stringhe, si usa la codifica di Huffman per far stare molte parole in due byte, e si quantizzano le probabilità con 4--8 bit invece di 8 byte.
+
+Per lo smoothing, su questa scala si usa spesso lo \textbf{stupid backoff} \cite{brants2007}, che rinuncia a fare discounting e usa direttamente le frequenze relative:
+\begin{equation}
+S(w_i \mid w_{i-k+1:i-1}) = \begin{cases} \dfrac{C(w_{i-k+1:i})}{C(w_{i-k+1:i-1})} & \text{se } C(w_{i-k+1:i}) > 0 \\[8pt] 0.4 \cdot S(w_i \mid w_{i-k+2:i-1}) & \text{altrimenti} \end{cases}
+\end{equation}
+dove la ricorsione termina sull'unigramma, con $S(w_i) = C(w_i)/N$. Il risultato non è una vera distribuzione di probabilità (per questo si scrive $S$ e non $P$), ma con dati così abbondanti funziona bene.
+
+\subsection{Absolute discounting}
+Supponiamo di voler sottrarre un po' di massa a un conteggio di 4, per darla agli zeri. Quanto dobbiamo sottrarre? L'idea di Church e Gale \cite{church1991} è stata dividere 22 milioni di parole di AP Newswire in un training set e un held-out set, e per ogni bigramma del training set guardare il suo conteggio reale nell'held-out set. Il risultato è in tabella~\ref{tab:church-gale}.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{cc}
+\toprule
+Conteggio nel training & Conteggio nell'held-out \\
+\midrule
+0 & 0.0000270 \\
+1 & 0.448 \\
+2 & 1.25 \\
+3 & 2.24 \\
+4 & 3.23 \\
+5 & 4.21 \\
+6 & 5.23 \\
+7 & 6.21 \\
+8 & 7.21 \\
+9 & 8.26 \\
+\bottomrule
+\end{tabular}
+\caption{Per i bigrammi che compaiono da 0 a 9 volte nel training set, il conteggio medio nell'held-out set (dati di Church e Gale su AP Newswire): tranne che per 0 e 1, vale circa $C^* = C - 0.75$.}
+\label{tab:church-gale}
+\end{table}
+
+Tranne che per i conteggi 0 e 1, il conteggio nell'held-out set è circa quello del training meno 0.75. L'\textbf{absolute discounting} formalizza questa osservazione: sottrae una quantità fissa $d$ (ad esempio 0.75, magari con un valore diverso per i conteggi 1 e 2) da ogni conteggio, e interpola con l'unigramma:
+\begin{equation}
+P_{\text{AD}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i) - d}{C(w_{i-1})} + \lambda(w_{i-1})\, P(w_i)
+\end{equation}
+dove il primo termine è il bigramma scontato e $\lambda(w_{i-1})$ è il peso dell'interpolazione. Il discount non cambia molto i conteggi alti, che sono già stime affidabili, e modifica soprattutto quelli bassi, di cui comunque non ci fidiamo.
+
+\subsection{Kneser-Ney smoothing}
+Resta un dubbio: è giusto usare l'unigramma $P(w_i)$ così com'è? Consideriamo lo Shannon game \enquote{I can't see without my reading \dots}. La parola giusta è \textit{glasses}, ma in un corpus di notizie \textit{Kong} può essere più frequente, perché \textit{Hong Kong} compare spesso. Il punto è che \textit{Kong} segue quasi sempre \textit{Hong}, mentre l'unigramma ci serve proprio quando \textbf{non} abbiamo visto il bigramma.
+
+Invece di chiederci quanto è probabile $w$, il \textbf{Kneser-Ney smoothing} \cite{kneser1995} si chiede quanto è probabile che $w$ compaia come \textbf{continuazione nuova}. Per ogni parola contiamo quanti tipi di bigrammi diversi completa, visto che ogni tipo di bigramma è stato una continuazione nuova la prima volta che è stato visto:
+\begin{equation}
+P_{\text{CONTINUATION}}(w_i) \propto \left|\{w_{i-1} : C(w_{i-1} w_i) > 0\}\right|.
+\end{equation}
+Per ottenere una probabilità normalizziamo per il numero totale di tipi di bigrammi:
+\begin{equation}
+P_{\text{CONTINUATION}}(w_i) = \frac{\left|\{w_{i-1} : C(w_{i-1} w_i) > 0\}\right|}{\left|\{(w'_{i-1}, w'_i) : C(w'_{i-1} w'_i) > 0\}\right|}
+\end{equation}
+o, in modo equivalente, per il numero di parole che precedono tutte le parole, $\sum_{w'_i} |\{w'_{i-1} : C(w'_{i-1} w'_i) > 0\}|$. Una parola frequente come \textit{Kong}, che compare in un solo contesto, ha quindi una probabilità di continuazione bassa.
+
+La formula dell'\textbf{interpolated Kneser-Ney} per i bigrammi è:
+\begin{equation}
+P_{\text{KN}}(w_i \mid w_{i-1}) = \frac{\max(C(w_{i-1} w_i) - d, 0)}{C(w_{i-1})} + \lambda(w_{i-1})\, P_{\text{CONTINUATION}}(w_i)
+\end{equation}
+dove $\lambda$ è una costante di normalizzazione, che distribuisce la massa di probabilità scontata:
+\begin{equation}
+\lambda(w_{i-1}) = \frac{d}{C(w_{i-1})} \cdot \left|\{w : C(w_{i-1} w) > 0\}\right|.
+\end{equation}
+Il primo fattore è il discount normalizzato, il secondo è il numero di tipi di parole che possono seguire $w_{i-1}$, ovvero il numero di parole a cui abbiamo applicato il discount.
+
+La formulazione generale è ricorsiva:
+\begin{equation}
+P_{\text{KN}}(w_i \mid w_{i-k+1:i-1}) = \frac{\max(c_{\text{KN}}(w_{i-k+1:i}) - d, 0)}{c_{\text{KN}}(w_{i-k+1:i-1})} + \lambda(w_{i-k+1:i-1})\, P_{\text{KN}}(w_i \mid w_{i-k+2:i-1})
+\end{equation}
+dove $c_{\text{KN}}(\cdot)$ è il conteggio normale per l'ordine più alto, e il \textbf{continuation count} per gli ordini più bassi, ovvero il numero di contesti distinti di una parola in cui compare la sequenza\footnote{Il libro aggiunge che la ricorsione termina interpolando gli unigrammi con la distribuzione uniforme $1/V$. La versione che funziona meglio è invece il \textit{modified Kneser-Ney} \cite{chen1998}, che usa tre discount diversi per gli N-gram con conteggio 1, 2 e 3 o più.}.
+
+\paragraph{Riepilogo sullo smoothing.} L'add-1 smoothing va bene per la classificazione del testo, ma non per i modelli di linguaggio. Per N-gram molto grandi, come quelli del web, si usa lo stupid backoff. Il metodo più usato in generale è l'interpolated Kneser-Ney, nella sua versione estesa.
+
+\subsection{Modelli di linguaggio avanzati}
+Accenniamo infine ad alcune varianti dei modelli N-gram. I \textbf{modelli discriminativi} scelgono i pesi degli N-gram per migliorare un task, invece che per adattarsi al training set. Esistono poi modelli basati sul parsing, e i \textbf{caching model}, che partono dall'osservazione che le parole usate di recente hanno più probabilità di ricomparire:
+\begin{equation}
+P_{\text{CACHE}}(w_i \mid \text{history}) = \lambda\, P(w_i \mid w_{i-2} w_{i-1}) + (1 - \lambda)\, \frac{C(w_i \in \text{history})}{|\text{history}|}.
+\end{equation}
+I caching model si sono rivelati però molto poco efficaci per il riconoscimento del parlato.

@@ -1,0 +1,8 @@
+.w-softmax-nlp .sx-sliders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.2rem 1rem; }
+@media (max-width: 720px) { .w-softmax-nlp .sx-sliders { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.w-softmax-nlp .sx-axis { stroke: var(--ink-soft); stroke-width: 1; }
+.w-softmax-nlp .sx-head { font-family: var(--font-serif); font-style: italic; font-size: 15px; fill: var(--ink-soft); }
+.w-softmax-nlp .sx-z { fill: var(--accent-soft); opacity: 0.8; transition: y calc(0.25s / var(--speed, 1)), height calc(0.25s / var(--speed, 1)); }
+.w-softmax-nlp .sx-z.neg { fill: var(--hot); opacity: 0.6; }
+.w-softmax-nlp .sx-p { fill: var(--fig); transition: y calc(0.25s / var(--speed, 1)), height calc(0.25s / var(--speed, 1)); }
+.w-softmax-nlp .sx-val { font-family: var(--font-mono); font-size: 11px; fill: var(--ink); text-anchor: middle; }
