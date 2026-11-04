@@ -6,7 +6,7 @@ La \textbf{classificazione del testo} consiste nell'assegnare a un testo una cla
     \item \textbf{Di cosa parla questo articolo medico?} Si tratta di assegnargli una categoria della gerarchia MeSH (Medical Subject Headings), come \textit{Blood Supply}, \textit{Chemistry}, \textit{Drug Therapy} o \textit{Epidemiology}.
     \item \textbf{Questa recensione è positiva o negativa?} \enquote{\dots zany characters and richly applied satire, and some great plot twists} è positiva, \enquote{It was pathetic. The worst part about it was the boxing scenes\dots} è negativa.
 \end{itemize}
-L'ultimo è un esempio di \textbf{sentiment analysis}, che useremo come esempio guida per tutto il capitolo, seguendo l'appendice B di \cite{jurafsky2026slp}. Le applicazioni sono molte: capire se la recensione di un film è positiva o negativa, cosa pensano le persone di un prodotto o come varia la fiducia dei consumatori. Si può anche capire cosa pensano gli elettori di un candidato, fino a predire l'esito di un'elezione o l'andamento del mercato.
+L'ultimo è un esempio di \textbf{sentiment analysis}, che useremo come esempio guida per tutto il capitolo. Il riferimento per questo capitolo è l'appendice B di \cite{jurafsky2026slp}. Le applicazioni sono molte: capire se la recensione di un film è positiva o negativa, cosa pensano le persone di un prodotto o come varia la fiducia dei consumatori. Si può anche capire cosa pensano gli elettori di un candidato, fino a predire l'esito di un'elezione o l'andamento del mercato.
 
 \paragraph{Stati affettivi.} Secondo la tipologia di Scherer \cite{scherer2000}, gli stati affettivi sono di diversi tipi:
 \begin{itemize}
@@ -190,7 +190,7 @@ I passi sono quattro, e la figura~\ref{fig:nb-esempio} li riassume:
     \end{aligned}
     \]
 \end{enumerate}
-Il modello predice quindi la classe negativa\footnote{Il libro e le slide riportano $3.2 \times 10^{-5}$ per la classe positiva, troncando il risultato: $\frac{2}{5} \cdot \frac{2}{24389} = 3.28 \times 10^{-5}$. La conclusione non cambia.}.
+Il modello predice quindi la classe negativa\footnote{Il valore esatto è $\frac{2}{5} \cdot \frac{2}{24389} = 3.28 \times 10^{-5}$, che spesso si trova troncato a $3.2 \times 10^{-5}$. La conclusione non cambia.}.
 
 \begin{figure}[htbp]
 \centering
@@ -350,7 +350,7 @@ dove $\beta$ pesa l'importanza delle due metriche: con $\beta > 1$ conta di più
 \begin{equation}
 F_1 = \frac{2PR}{P + R}.
 \end{equation}
-La F-measure è una media armonica pesata di precision e recall. Il libro spiega che la media armonica di due valori è più vicina al minimo dei due rispetto alla media aritmetica, quindi è una scelta più conservativa: per avere una F1 alta servono sia la precision sia la recall alte.
+La F-measure è una media armonica pesata di precision e recall. La media armonica di due valori è più vicina al minimo dei due rispetto alla media aritmetica, quindi è una scelta più conservativa: per avere una F1 alta servono sia la precision sia la recall alte.
 
 \subsection{Più di due classi}
 Oltre alla classificazione binaria, con due classi come 0 e 1, positiva e negativa o spam e non spam, ci sono altri due casi:

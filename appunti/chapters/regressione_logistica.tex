@@ -1,5 +1,5 @@
 \chapter{Regressione logistica}\label{ch:lr}
-La \textbf{regressione logistica} è uno strumento di analisi molto usato nelle scienze naturali e sociali, ed è la baseline del machine learning supervisionato per la classificazione. È anche la base delle reti neurali: come vedremo più avanti nel corso, una rete neurale si può vedere come una serie di classificatori logistici messi uno sopra l'altro. Il capitolo segue il capitolo 4 di \cite{jurafsky2026slp}. Vediamo come si classifica un testo con la regressione logistica, come si addestra il modello con la cross-entropy loss e la discesa del gradiente, e come si estende il modello a più di due classi.
+La \textbf{regressione logistica} è uno strumento di analisi molto usato nelle scienze naturali e sociali, ed è la baseline del machine learning supervisionato per la classificazione. È anche la base delle reti neurali: come vedremo più avanti nel corso, una rete neurale si può vedere come una serie di classificatori logistici messi uno sopra l'altro. Il riferimento per questo capitolo è il capitolo 4 di \cite{jurafsky2026slp}. Vediamo come si classifica un testo con la regressione logistica, come si addestra il modello con la cross-entropy loss e la discesa del gradiente, e come si estende il modello a più di due classi.
 
 \section{Classificatori generativi e discriminativi}
 Naive Bayes (capitolo~\ref{ch:nb}) è un classificatore \textbf{generativo}, mentre la regressione logistica è un classificatore \textbf{discriminativo}. Per capire la differenza, supponiamo di voler distinguere le immagini di gatti da quelle di cani:
@@ -87,7 +87,7 @@ La sigmoide è quasi lineare intorno a 0 e si appiattisce agli estremi, per cui 
 \begin{equation}
 \sigma(-z) = 1 - \sigma(z) = \frac{e^{-z}}{1 + e^{-z}}, \qquad \sigma'(z) = \sigma(z)\,\big(1 - \sigma(z)\big)
 \end{equation}
-dove la prima segue dalla definizione (e dalla forma \enquote{simmetrica} della curva), la seconda dalle proprietà delle derivate\footnote{Nel libro $z$ viene chiamato \textbf{logit}, perché la funzione logit è l'inversa della sigmoide: $\logit(p) = \sigma^{-1}(p) = \ln \frac{p}{1 - p}$, ovvero il logaritmo degli odds. Chiamare $z$ logit ricorda che lo stiamo interpretando come un log odds.}.
+dove la prima segue dalla definizione (e dalla forma \enquote{simmetrica} della curva), la seconda dalle proprietà delle derivate\footnote{La quantità $z$ si chiama anche \textbf{logit}, perché la funzione logit è l'inversa della sigmoide: $\logit(p) = \sigma^{-1}(p) = \ln \frac{p}{1 - p}$, ovvero il logaritmo degli odds. Chiamare $z$ logit ricorda che lo stiamo interpretando come un log odds.}.
 
 L'idea della regressione logistica è quindi calcolare $\mathbf{w} \cdot \mathbf{x} + b$, passarlo nella sigmoide e trattare il risultato come una probabilità. Per avere una distribuzione basta assicurarsi che le due probabilità sommino a 1:
 \begin{align}
@@ -259,7 +259,7 @@ Le derivate parziali della cross-entropy loss~\eqref{eq:ce} hanno una forma molt
 Il gradiente rispetto a un singolo peso $w_j$ è un valore molto intuitivo: la differenza tra la stima $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$ e il valore vero $y$, moltiplicata per il valore della feature $x_j$ corrispondente.
 
 \begin{osservazione}[Da dove viene il gradiente]
-Il libro ricava la~\eqref{eq:lr-grad} con la regola della catena, usando $\frac{d}{dx}\ln x = \frac{1}{x}$ e la proprietà $\sigma'(z) = \sigma(z)(1 - \sigma(z))$. Posto $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$, e osservando che $\frac{\partial}{\partial w_j}(\mathbf{w} \cdot \mathbf{x} + b) = x_j$:
+La~\eqref{eq:lr-grad} si ricava con la regola della catena, usando $\frac{d}{dx}\ln x = \frac{1}{x}$ e la proprietà $\sigma'(z) = \sigma(z)(1 - \sigma(z))$. Posto $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$, e osservando che $\frac{\partial}{\partial w_j}(\mathbf{w} \cdot \mathbf{x} + b) = x_j$:
 \[
 \frac{\partial L_{CE}}{\partial w_j} = -\left[\frac{y}{\hat{y}} - \frac{1 - y}{1 - \hat{y}}\right] \hat{y}(1 - \hat{y})\, x_j = -\big[y(1 - \hat{y}) - (1 - y)\hat{y}\big]\, x_j = (\hat{y} - y)\, x_j.
 \]
@@ -332,7 +332,7 @@ dove $\alpha$ regola la forza della regolarizzazione. Le scelte più comuni per 
     R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_1 = \sum_{i=1}^{n} |\theta_i| \qquad \Longrightarrow \qquad \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} |\theta_j|.
     \end{equation}
 \end{itemize}
-Il libro aggiunge che la L2 è più facile da ottimizzare, perché la derivata di $\theta^2$ è semplicemente $2\theta$, e preferisce vettori con tanti pesi piccoli. La L1 invece preferisce soluzioni sparse, con alcuni pesi grandi e molti pesi a zero, e quindi con molte meno feature. In entrambi i casi il bias di solito non viene regolarizzato.
+La L2 è più facile da ottimizzare, perché la derivata di $\theta^2$ è semplicemente $2\theta$, e preferisce vettori con tanti pesi piccoli. La L1 invece preferisce soluzioni sparse, con alcuni pesi grandi e molti pesi a zero, e quindi con molte meno feature. In entrambi i casi il bias di solito non viene regolarizzato.
 
 \section{Regressione logistica multinomiale}
 Spesso servono più di due classi: sentiment positiva, negativa o neutra, le parti del discorso (nome, verbo, aggettivo, avverbio, preposizione, \dots), o le classi di intervento a cui smistare gli SMS di emergenza. Con più di due classi si usa la \textbf{regressione logistica multinomiale}, detta anche \textbf{softmax regression} o multinomial logit (e, in passato, maximum entropy modeling o MaxEnt). Da qui in poi, \enquote{regressione logistica} indicherà il caso binario.
@@ -378,7 +378,7 @@ Come per la sigmoide, l'input del softmax è il prodotto scalare tra un vettore 
 \begin{equation}
 p(y = c \mid x) = \frac{\exp(\mathbf{w}_c \cdot \mathbf{x} + b_c)}{\sum_{j=1}^{k} \exp(\mathbf{w}_j \cdot \mathbf{x} + b_j)}.
 \end{equation}
-Il libro osserva che, mettendo i $k$ vettori di pesi come righe di una matrice $W$ e i bias in un vettore $\mathbf{b}$, tutte le probabilità si calcolano in un colpo solo con $\hat{\mathbf{y}} = \mathrm{softmax}(W\mathbf{x} + \mathbf{b})$.
+Mettendo i $k$ vettori di pesi come righe di una matrice $W$ e i bias in un vettore $\mathbf{b}$, tutte le probabilità si calcolano in un colpo solo con $\hat{\mathbf{y}} = \mathrm{softmax}(W\mathbf{x} + \mathbf{b})$.
 
 \paragraph{Feature nel caso binario e multinomiale.} Nella regressione logistica binaria un peso positivo spinge verso $y = 1$ e un peso negativo verso $y = 0$. Consideriamo ad esempio la feature
 \[

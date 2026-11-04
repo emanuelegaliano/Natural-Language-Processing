@@ -173,7 +173,7 @@ Da qui in poi, in NLP, il significato di una parola è un vettore, e tutto il re
 
 \paragraph{Dal vettore statico al vettore contestuale.} In word2vec una parola ha \textbf{un solo vettore}, sempre lo stesso. Pensiamo alla parola \textit{macchina}: il suo vettore sta a metà strada tra le auto, i dispositivi e la burocrazia, un compromesso che non descrive bene nessuno dei tre significati.
 
-Con il Transformer (2017) \cite{vaswani2017attention}, e poi con BERT e GPT (2018), il vettore di una parola viene invece \textbf{calcolato ogni volta}, guardando il contesto. La stessa parola finisce quindi in punti diversi dello spazio a seconda della frase: \enquote{Ho parcheggiato la macchina} la avvicina ad \textit{auto}, \enquote{La macchina del caffè è rotta} a \textit{elettrodomestico}, \enquote{La macchina amministrativa è lenta} a \textit{burocrazia}. Polisemia e ambiguità si risolvono così \enquote{da sole}, senza nessuna regola scritta: è il contesto a fare il lavoro, grazie a un meccanismo che si chiama \textbf{attenzione}.
+Con il Transformer (2017) \cite{vaswani2017attention}, e poi con BERT e GPT (2018), il vettore di una parola viene invece \textbf{calcolato ogni volta}, guardando il contesto. La stessa parola finisce quindi in punti diversi dello spazio a seconda della frase: \enquote{Ho parcheggiato la macchina} la avvicina ad \textit{auto}, \enquote{La macchina del caffè è rotta} a \textit{elettrodomestico}, \enquote{La macchina amministrativa è lenta} a \textit{burocrazia}. Polisemia e ambiguità si risolvono così \enquote{da sole}, senza nessuna regola scritta: è il contesto a fare il lavoro, grazie a un meccanismo che si chiama \textbf{self-attention}.
 
 \section{Large Language Models}\label{sec:llm}
 Un \textbf{modello di linguaggio} (language model) è un programma che, dato un testo, stima quanto è probabile ogni possibile parola successiva:
@@ -210,7 +210,7 @@ L'intuizione di GPT-2 (2019) è che un modello abbastanza grande, per predire me
 
 \paragraph{Come si addestra un modello GPT.} Si prende un testo, si nasconde la parola successiva e si chiede al modello la sua distribuzione di probabilità. Una funzione di \textbf{loss} misura l'errore, ovvero quanta poca probabilità è andata alla parola giusta. I \textbf{parametri} (i numeri interni del modello, i pesi delle connessioni) vengono poi ritoccati di pochissimo nella direzione che la riduce, con la discesa del gradiente che vedremo nel capitolo~\ref{ch:lr}. Il processo continua con la parola successiva\footnote{In realtà è una semplificazione: la loss viene calcolata in parallelo su tutte le posizioni del testo.}. In questa fase non serve nessun annotatore umano, solo testo. La crescita dei modelli è stata rapida:
 \begin{itemize}
-    \item \textbf{2017, Transformer}: l'architettura basata sull'attenzione \cite{vaswani2017attention}.
+    \item \textbf{2017, Transformer}: l'architettura basata sulla self-attention \cite{vaswani2017attention}.
     \item \textbf{2018, GPT-1}: 117 milioni di parametri, addestrato su 7000 libri (circa un miliardo di parole).
     \item \textbf{2019, GPT-2}: 1,5 miliardi di parametri e 40 GB di pagine web, svolge compiti mai insegnati.
     \item \textbf{2020, GPT-3}: 175 miliardi di parametri e 300 miliardi di parole, impara \enquote{al volo} da pochi esempi nel prompt.
@@ -271,7 +271,7 @@ Alcuni operatori dicono quante volte deve comparire il carattere che li precede:
     \item \verb|+| (\textbf{Kleene plus}): una o più volte, quindi \verb|o+h!| fa match con le stesse stringhe di \verb|oo*h!|, e \verb|baa+| con \textit{baa}, \textit{baaa}, \textit{baaaa}, \dots;
     \item \verb|.|: un carattere qualsiasi (tranne il newline), quindi \verb|beg.n| fa match con \textit{begin}, \textit{begun} e \textit{beg3n}.
 \end{itemize}
-Il punto si usa spesso insieme alla Kleene star: \verb|.*| indica una stringa qualsiasi, anche vuota, e lo ritroveremo in ELIZA. Il libro aggiunge anche il contatore esplicito \verb|{n}|, che indica esattamente $n$ occorrenze: \verb|\d{2}| sono due cifre consecutive.
+Il punto si usa spesso insieme alla Kleene star: \verb|.*| indica una stringa qualsiasi, anche vuota, e lo ritroveremo in ELIZA. Esiste anche il contatore esplicito \verb|{n}|, che indica esattamente $n$ occorrenze: ad esempio \verb|\d{2}| sono due cifre consecutive.
 
 \subsection{Backslash e ancore}
 Il \textbf{backslash} ha due usi. Il primo è riferirsi a un carattere speciale come carattere normale: \verb|\.| è un punto, \verb|\*| un asterisco, \verb|\[| una parentesi quadra e \verb|\\| il backslash stesso. Il secondo è indicare i caratteri di escape, come \verb|\n| (newline) e \verb|\t| (tab). Esistono inoltre degli \textbf{alias} per gli insiemi di caratteri più comuni (tabella~\ref{tab:regex-alias}).
@@ -299,7 +299,7 @@ Le \textbf{ancore} legano invece il pattern a una posizione precisa della string
 Il caret ha quindi tre significati: inizio riga, negazione dentro le parentesi quadre, semplice carattere. Un'altra ancora utile è \verb|\b|, il \textbf{confine di parola}: \verb|\bthe\b| fa match con la parola \textit{the} ma non con \textit{other}\footnote{Per le regex una \enquote{parola} è una sequenza di lettere, cifre e underscore, come gli identificatori dei linguaggi di programmazione. Le ancore non consumano caratteri: fanno match con la stringa vuota in una certa posizione.}.
 
 \subsection{Un esempio: trovare \textit{the}}
-Vogliamo trovare in un testo tutte le occorrenze dell'articolo inglese \textit{the}. Il pattern più semplice, \verb|the|, non trova le occorrenze a inizio frase, scritte con la maiuscola. Possiamo correggerlo con \verb|[tT]he|, che però restituisce anche il \textit{the} contenuto in \textit{other} o \textit{theology}. Le slide propongono allora di richiedere un carattere non alfabetico prima e dopo, con \verb|[^a-zA-Z][tT]he[^a-zA-Z]|, mentre il libro usa i confini di parola, con \verb|\b[tT]he\b|.
+Vogliamo trovare in un testo tutte le occorrenze dell'articolo inglese \textit{the}. Il pattern più semplice, \verb|the|, non trova le occorrenze a inizio frase, scritte con la maiuscola. Possiamo correggerlo con \verb|[tT]he|, che però restituisce anche il \textit{the} contenuto in \textit{other} o \textit{theology}. Una prima soluzione è richiedere un carattere non alfabetico prima e dopo, con \verb|[^a-zA-Z][tT]he[^a-zA-Z]|. Una seconda è usare i confini di parola, con \verb|\b[tT]he\b|.
 
 Le due soluzioni non sono equivalenti: la prima richiede che ci sia un carattere prima di \textit{The}, e quindi non trova un \textit{The} all'inizio della riga (figura~\ref{fig:regex-the}).
 
@@ -334,7 +334,7 @@ Ridurre l'errore complessivo richiede due sforzi tra loro antagonisti: aumentare
   \node[fn, anchor=base west] at (6.2,-3.2) {\strut\ falso negativo\ };
 \end{tikzpicture}
 \end{widget}
-\caption{I quattro tentativi per trovare l'articolo \textit{the} nella frase \enquote{The other day the theology class was the best.}. Il pattern \texttt{the} perde il \textit{The} iniziale e trova \textit{the} dentro \textit{other} e \textit{theology}, mentre \texttt{[tT]he} recupera il \textit{The} ma mantiene i falsi positivi. La versione delle slide elimina i falsi positivi, ma senza un carattere prima del \textit{The} iniziale lo perde di nuovo. Con i confini di parola \texttt{\textbackslash{}b} si trovano tutte e sole le tre occorrenze.}
+\caption{I quattro tentativi per trovare l'articolo \textit{the} nella frase \enquote{The other day the theology class was the best.}. Il pattern \texttt{the} perde il \textit{The} iniziale e trova \textit{the} dentro \textit{other} e \textit{theology}, mentre \texttt{[tT]he} recupera il \textit{The} ma mantiene i falsi positivi. Il terzo pattern elimina i falsi positivi, ma senza un carattere prima del \textit{The} iniziale lo perde di nuovo. Con i confini di parola \texttt{\textbackslash{}b} si trovano tutte e sole le tre occorrenze.}
 \label{fig:regex-the}
 \end{figure}
 
@@ -378,7 +378,7 @@ ELIZA: & I AM SORRY TO HEAR YOU ARE DEPRESSED \\
 \end{tabular}
 \end{center}
 
-ELIZA funziona con una \textbf{cascata di sostituzioni}: ognuna fa match con una parte della frase in input e la trasforma. Il libro descrive due fasi. Nella prima l'input viene portato in maiuscolo e si scambiano i pronomi, sostituendo \textit{MY} con \textit{YOUR}, \textit{I'M} con \textit{YOU ARE} e così via, in modo che quando ELIZA ripete una parte della frase sembri riferirsi correttamente all'utente. Nella seconda si applicano le regole che trasformano l'input in una risposta completa, come queste:
+ELIZA funziona con una \textbf{cascata di sostituzioni}: ognuna fa match con una parte della frase in input e la trasforma. Le fasi sono due. Nella prima l'input viene portato in maiuscolo e si scambiano i pronomi, sostituendo \textit{MY} con \textit{YOUR}, \textit{I'M} con \textit{YOU ARE} e così via, in modo che quando ELIZA ripete una parte della frase sembri riferirsi correttamente all'utente. Nella seconda si applicano le regole che trasformano l'input in una risposta completa, come queste:
 \begin{center}
 \begin{tabular}{l}
 \verb+s/.* I'M (depressed|sad) .*/I AM SORRY TO HEAR YOU ARE \1/+ \\

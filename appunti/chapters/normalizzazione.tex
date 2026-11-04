@@ -5,7 +5,7 @@ Qualsiasi task di NLP richiede una \textbf{normalizzazione del testo}, che consi
     \item \textbf{normalizzare} il formato delle parole;
     \item \textbf{segmentare} le frasi.
 \end{enumerate}
-Prima di vederle una alla volta, conviene però mettersi d'accordo su cosa sia una parola, dato che la risposta è meno ovvia di quanto sembri. In questo capitolo seguiamo il capitolo 2 di \cite{jurafsky2026slp}.
+Prima di vederle una alla volta, conviene però mettersi d'accordo su cosa sia una parola, dato che la risposta è meno ovvia di quanto sembri. Il riferimento per questo capitolo è il capitolo 2 di \cite{jurafsky2026slp}.
 
 \section{Parole e corpora}\label{sec:parole}
 Quante parole ci sono in una frase? Consideriamo \enquote{Seuss's cat in the hat is different from other cats!}. Le parole \textit{cat} e \textit{cats} sono la stessa parola oppure no? Dipende da cosa intendiamo:
@@ -14,7 +14,7 @@ Quante parole ci sono in una frase? Consideriamo \enquote{Seuss's cat in the hat
     \item una \textbf{wordform} è invece la forma flessa completa, così come compare nel testo: \textit{cat} e \textit{cats} sono due wordform diverse.
 \end{itemize}
 
-Una seconda distinzione riguarda il conteggio. Un \textbf{word type} è un elemento del vocabolario, mentre un \textbf{word token} è una sua istanza nel testo\footnote{Il libro di testo parla di \textit{word instance} al posto di word token, e riserva il termine \textit{token} all'output degli algoritmi di tokenizzazione in sottoparole che vedremo nella sezione~\ref{sec:bpe}.}. La frase
+Una seconda distinzione riguarda il conteggio. Un \textbf{word type} è un elemento del vocabolario, mentre un \textbf{word token} è una sua istanza nel testo\footnote{Si parla anche di \textit{word instance} al posto di word token, riservando il termine \textit{token} all'output degli algoritmi di tokenizzazione in sottoparole che vedremo nella sezione~\ref{sec:bpe}.}. La frase
 \begin{center}
 \textit{they lay back on the San Francisco grass and looked at the stars and their}
 \end{center}
@@ -24,7 +24,7 @@ contiene 15 token e 13 type, dato che \textit{the} e \textit{and} compaiono due 
 \begin{equation}
 |V| = k N^\beta
 \end{equation}
-dove $k$ e $\beta$ sono costanti positive, con $0 < \beta < 1$. Le slide riportano valori tipici di $\beta$ tra $0.67$ e $0.75$, mentre il libro riporta valori tra $0.44$ e $0.56$, o anche più alti: il valore dipende dalla dimensione del corpus e dal genere. In entrambi i casi la conclusione è la stessa, ovvero il vocabolario cresce un po' più velocemente della radice quadrata del numero di token (tabella~\ref{tab:corpora}).
+dove $k$ e $\beta$ sono costanti positive, con $0 < \beta < 1$. I valori tipici di $\beta$ vanno da circa $0.44$ fino a $0.75$, e dipendono dalla dimensione del corpus e dal genere. In ogni caso il vocabolario cresce un po' più velocemente della radice quadrata del numero di token (tabella~\ref{tab:corpora}).
 
 \begin{table}[htbp]
 \centering
@@ -73,7 +73,7 @@ I comandi, collegati da una pipe, fanno nell'ordine (figura~\ref{fig:unix-pipeli
     \item \verb|uniq -c| fonde le righe uguali adiacenti e conta quante sono, quindi ogni riga diventa un type con la sua frequenza;
     \item \verb|sort -n -r| ordina in ordine numerico decrescente.
 \end{enumerate}
-Il risultato mette in cima le parole più frequenti, che in Shakespeare, come in qualsiasi corpus, sono le parole funzionali brevi: \textit{the} (23288 volte), \textit{I} (22225), \textit{and} (18653), \textit{to} (16373), \textit{of} (15725), \textit{a}, \textit{you}, \textit{my}, \textit{in}. Il libro ottiene lo stesso risultato con \verb|tr -sc 'A-Za-z' '\n'|, che sostituisce (\texttt{-c}, complemento) ogni carattere non alfabetico con un a capo e fonde (\texttt{-s}, squeeze) gli a capo consecutivi\footnote{Aggiungendo \texttt{tr A-Z a-z} prima del primo \texttt{sort} si porta tutto in minuscolo, e \textit{The} e \textit{the} vengono contati insieme: è il case folding della sezione~\ref{sec:case-folding}.}.
+Il risultato mette in cima le parole più frequenti, che in Shakespeare, come in qualsiasi corpus, sono le parole funzionali brevi: \textit{the} (23288 volte), \textit{I} (22225), \textit{and} (18653), \textit{to} (16373), \textit{of} (15725), \textit{a}, \textit{you}, \textit{my}, \textit{in}. Lo stesso risultato si ottiene con \verb|tr -sc 'A-Za-z' '\n'|, che sostituisce (\texttt{-c}, complemento) ogni carattere non alfabetico con un a capo e fonde (\texttt{-s}, squeeze) gli a capo consecutivi\footnote{Aggiungendo \texttt{tr A-Z a-z} prima del primo \texttt{sort} si porta tutto in minuscolo, e \textit{The} e \textit{the} vengono contati insieme: è il case folding della sezione~\ref{sec:case-folding}.}.
 
 \begin{figure}[htbp]
 \centering
@@ -197,7 +197,7 @@ L'algoritmo si ferma dopo $k$ merge, per cui $k$ è un suo parametro, e il vocab
 \end{algorithmic}
 \end{algorithm}
 
-In pratica, BPE viene eseguito solo dentro le parole: i merge non attraversano mai il confine tra due parole. Per questo si aggiunge prima un simbolo speciale di fine parola \texttt{\_} prima di ogni spazio, e poi si separa ogni parola nei suoi caratteri\footnote{Il libro di testo usa una convenzione diversa, più vicina a quella dei modelli di linguaggio: lo spazio viene attaccato all'inizio della parola successiva. Il testo viene prima pre-tokenizzato con un'espressione regolare, separandolo su spazi e punteggiatura, e i merge sono permessi solo dentro i pezzi così ottenuti.}. Forniamo il seguente esempio, che seguiremo per tutta la sezione. Il corpus di training è:
+In pratica, BPE viene eseguito solo dentro le parole: i merge non attraversano mai il confine tra due parole. Per questo si aggiunge prima un simbolo speciale di fine parola \texttt{\_} prima di ogni spazio, e poi si separa ogni parola nei suoi caratteri\footnote{Nei modelli di linguaggio si usa spesso una convenzione diversa: lo spazio viene attaccato all'inizio della parola successiva. Il testo viene prima pre-tokenizzato con un'espressione regolare, separandolo su spazi e punteggiatura, e i merge sono permessi solo dentro i pezzi così ottenuti.}. Forniamo il seguente esempio, che seguiremo per tutta la sezione. Il corpus di training è:
 \begin{center}
 \textit{low low low low low lowest lowest newer newer newer newer newer newer wider wider wider new new}
 \end{center}
