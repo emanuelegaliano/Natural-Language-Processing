@@ -92,7 +92,8 @@ dove la prima segue dalla definizione (e dalla forma \enquote{simmetrica} della 
 L'idea della regressione logistica è quindi calcolare $\mathbf{w} \cdot \mathbf{x} + b$, passarlo nella sigmoide e trattare il risultato come una probabilità. Per avere una distribuzione basta assicurarsi che le due probabilità sommino a 1:
 \begin{align}
 P(y = 1) &= \sigma(\mathbf{w} \cdot \mathbf{x} + b) = \frac{1}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)} \\
-P(y = 0) &= 1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b) = 1 - \frac{1}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)} = \frac{\exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}.
+P(y = 0) &= 1 - \sigma(\mathbf{w} \cdot \mathbf{x} + b) = 1 - \frac{1}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)} \nonumber \\
+&= \frac{\exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}{1 + \exp\big(-(\mathbf{w} \cdot \mathbf{x} + b)\big)}.
 \end{align}
 
 \paragraph{Da probabilità a classificatore.} Per decidere la classe di un'osservazione di test usiamo la soglia $0.5$, detta \textbf{decision boundary}:
@@ -247,14 +248,19 @@ dove un learning rate più alto vuol dire spostare $w$ più velocemente.
 I gradienti reali sono molto più lunghi, perché i pesi sono moltissimi. Per ogni dimensione $w_i$, la componente del gradiente ci dice la pendenza rispetto a quella variabile, ovvero quanto una piccola variazione di $w_i$ influenza la loss totale $L$, e si esprime con la derivata parziale $\frac{\partial}{\partial w_i}$ della loss. Il gradiente è il vettore di queste derivate parziali:
 \begin{equation}
 \nabla L\big(f(x; \boldsymbol{\theta}), y\big) = \begin{bmatrix} \frac{\partial}{\partial w_1} L(f(x; \boldsymbol{\theta}), y) \\ \vdots \\ \frac{\partial}{\partial w_n} L(f(x; \boldsymbol{\theta}), y) \\ \frac{\partial}{\partial b} L(f(x; \boldsymbol{\theta}), y) \end{bmatrix}
-\qquad \text{e} \qquad
+\end{equation}
+e l'aggiornamento dei parametri diventa:
+\begin{equation}
 \boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t - \eta\, \nabla L\big(f(x; \boldsymbol{\theta}), y\big).
 \end{equation}
 
 \subsection{Il gradiente della regressione logistica}
 Le derivate parziali della cross-entropy loss~\eqref{eq:ce} hanno una forma molto elegante:
 \begin{equation}\label{eq:lr-grad}
-\frac{\partial L_{CE}(\hat{y}, y)}{\partial w_j} = \big[\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y\big]\, x_j, \qquad \frac{\partial L_{CE}(\hat{y}, y)}{\partial b} = \sigma(\mathbf{w} \cdot \mathbf{x} + b) - y.
+\begin{aligned}
+\frac{\partial L_{CE}(\hat{y}, y)}{\partial w_j} &= \big[\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y\big]\, x_j, \\
+\frac{\partial L_{CE}(\hat{y}, y)}{\partial b} &= \sigma(\mathbf{w} \cdot \mathbf{x} + b) - y.
+\end{aligned}
 \end{equation}
 Il gradiente rispetto a un singolo peso $w_j$ è un valore molto intuitivo: la differenza tra la stima $\hat{y} = \sigma(\mathbf{w} \cdot \mathbf{x} + b)$ e il valore vero $y$, moltiplicata per il valore della feature $x_j$ corrispondente.
 
@@ -292,11 +298,14 @@ La \textbf{discesa del gradiente stocastica} (stochastic gradient descent, SGD) 
 
 Il passo di aggiornamento è $\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t - \eta \nabla L(f(x; \boldsymbol{\theta}), y)$, dove il gradiente ha tre componenti. Con la~\eqref{eq:lr-grad}, e dato che $\sigma(0) = 0.5$:
 \[
-\nabla_{w, b} L = \begin{bmatrix} \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_1} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_2} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial b} \end{bmatrix}
+\begin{aligned}
+\nabla_{w, b} L &= \begin{bmatrix} \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_1} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial w_2} \\[3pt] \frac{\partial L_{CE}(\hat{y}, y)}{\partial b} \end{bmatrix}
 = \begin{bmatrix} (\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y)\, x_1 \\ (\sigma(\mathbf{w} \cdot \mathbf{x} + b) - y)\, x_2 \\ \sigma(\mathbf{w} \cdot \mathbf{x} + b) - y \end{bmatrix}
-= \begin{bmatrix} (\sigma(0) - 1)\, x_1 \\ (\sigma(0) - 1)\, x_2 \\ \sigma(0) - 1 \end{bmatrix}
+\\
+&= \begin{bmatrix} (\sigma(0) - 1)\, x_1 \\ (\sigma(0) - 1)\, x_2 \\ \sigma(0) - 1 \end{bmatrix}
 = \begin{bmatrix} -0.5\, x_1 \\ -0.5\, x_2 \\ -0.5 \end{bmatrix}
 = \begin{bmatrix} -1.5 \\ -1.0 \\ -0.5 \end{bmatrix}.
+\end{aligned}
 \]
 Ci spostiamo quindi nella direzione opposta al gradiente:
 \[
@@ -325,11 +334,19 @@ dove $\alpha$ regola la forza della regolarizzazione. Le scelte più comuni per 
 \begin{itemize}
     \item \textbf{Regolarizzazione L2} (ridge regression): $R(\boldsymbol{\theta})$ è la somma dei quadrati dei pesi. Si chiama così perché è il quadrato della norma L2 $\|\boldsymbol{\theta}\|_2$, ovvero della distanza euclidea di $\boldsymbol{\theta}$ dall'origine:
     \begin{equation}
-    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_2^2 = \sum_{j=1}^{n} \theta_j^2 \qquad \Longrightarrow \qquad \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} \theta_j^2.
+    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_2^2 = \sum_{j=1}^{n} \theta_j^2
+    \end{equation}
+    e la funzione obiettivo diventa:
+    \begin{equation}
+    \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} \theta_j^2.
     \end{equation}
     \item \textbf{Regolarizzazione L1} (lasso regression): $R(\boldsymbol{\theta})$ è la somma dei valori assoluti dei pesi, ovvero la norma L1 $\|\boldsymbol{\theta}\|_1$ (la distanza di Manhattan):
     \begin{equation}
-    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_1 = \sum_{i=1}^{n} |\theta_i| \qquad \Longrightarrow \qquad \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} |\theta_j|.
+    R(\boldsymbol{\theta}) = \|\boldsymbol{\theta}\|_1 = \sum_{i=1}^{n} |\theta_i|
+    \end{equation}
+    e la funzione obiettivo diventa:
+    \begin{equation}
+    \hat{\boldsymbol{\theta}} = \argmax_{\boldsymbol{\theta}} \left[\sum_{i=1}^{m} \log P(y^{(i)} \mid x^{(i)})\right] - \alpha \sum_{j=1}^{n} |\theta_j|.
     \end{equation}
 \end{itemize}
 La L2 è più facile da ottimizzare, perché la derivata di $\theta^2$ è semplicemente $2\theta$, e preferisce vettori con tanti pesi piccoli. La L1 invece preferisce soluzioni sparse, con alcuni pesi grandi e molti pesi a zero, e quindi con molte meno feature. In entrambi i casi il bias di solito non viene regolarizzato.

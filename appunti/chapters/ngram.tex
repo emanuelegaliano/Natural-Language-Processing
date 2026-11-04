@@ -47,7 +47,11 @@ P(\text{the} \mid \text{its water is so transparent that}) \approx P(\text{the} 
 \]
 oppure, guardando due parole indietro, $P(\text{the} \mid \text{transparent that})$. In altre parole, approssimiamo ogni fattore del prodotto~\eqref{eq:chain-words} guardando solo le $k-1$ parole precedenti\footnote{Con $k = 2$ si parla di bigrammi, con $k = 3$ di trigrammi, e in generale di N-gram. Il termine N-gram indica sia la sequenza di $N$ parole sia il modello probabilistico che la usa.}:
 \begin{equation}
-P(W_i \mid W_{1:i-1}) \approx P(W_i \mid W_{i-k+1:i-1}) \qquad \Longrightarrow \qquad P(W_{1:n}) \approx \prod_{i=1}^{n} P(W_i \mid W_{i-k+1:i-1}).
+P(W_i \mid W_{1:i-1}) \approx P(W_i \mid W_{i-k+1:i-1})
+\end{equation}
+e quindi, sostituendo nel prodotto:
+\begin{equation}
+P(W_{1:n}) \approx \prod_{i=1}^{n} P(W_i \mid W_{i-k+1:i-1}).
 \end{equation}
 
 Il caso più semplice è il modello \textbf{unigram}, in cui ogni parola è indipendente dalle altre: $P(W_{1:n}) \approx \prod_i P(W_i)$. Le frasi generate da un modello unigram sono sequenze di parole frequenti senza alcun legame tra loro, come \enquote{fifth an of futures the an incorporated a a the inflation most dollars quarter in is mass}.
@@ -157,10 +161,6 @@ Le probabilità sono numeri minori di 1, e più ne moltiplichiamo più il prodot
 \]
 e in più sommare è più veloce che moltiplicare. Per costruire modelli N-gram reali si usano toolkit come SRILM e KenLM (utilizzabile anche in Python). Nel 2006 Google ha rilasciato un corpus di N-gram calcolato su mille miliardi di parole del web. Al suo interno, ad esempio, \textit{serve as the incubator} compare 99 volte, \textit{serve as the independent} 794 volte e \textit{serve as the index} 223 volte.
 
-\begin{esercizio}[KenLM sul Berkeley Restaurant Project]
-Calcolare la probabilità e la perplexity (sezione~\ref{sec:perplexity}) di un testo a piacere, usando un modello a bigrammi addestrato sul Berkeley Restaurant Project con il toolkit KenLM (\url{https://github.com/kpu/kenlm}).
-\end{esercizio}
-
 \section{Valutare un modello di linguaggio}
 Il nostro modello preferisce le frasi buone a quelle cattive? In altre parole, assegna una probabilità più alta alle frasi \enquote{reali} o osservate spesso, e più bassa a quelle sgrammaticate o rare? Per rispondere servono tre ingredienti:
 \begin{itemize}
@@ -268,9 +268,9 @@ La soluzione classica è un token speciale \texttt{<UNK>}: si fissa un lessico $
 L'intuizione dello \textbf{smoothing} (o \textit{discounting}) è che, quando le statistiche sono sparse, conviene \enquote{rubare} un po' di massa di probabilità agli eventi visti per darla a quelli mai visti, e generalizzare meglio. Torniamo all'esempio di \textit{denied the}: nel training abbiamo visto 3 volte \textit{allegations}, 2 volte \textit{reports}, una volta \textit{claims} e una volta \textit{request}, per un totale di 7. Invece di $3/7$, $2/7$, $1/7$ e $1/7$, possiamo usare ad esempio $2.5/7$, $1.5/7$, $0.5/7$ e $0.5/7$, e lasciare $2/7$ a tutte le altre parole (\textit{attack}, \textit{man}, \textit{outcome}, \dots).
 
 \subsection{Laplace smoothing}
-Il modo più semplice di fare smoothing è il \textbf{Laplace smoothing} (o add-one): facciamo finta di aver visto ogni parola una volta in più di quante l'abbiamo vista davvero, ovvero aggiungiamo 1 a tutti i conteggi. Dato che ognuna delle $|V|$ parole del vocabolario riceve un conteggio in più, anche il denominatore deve crescere di $|V|$:
+Il modo più semplice di fare smoothing è il \textbf{Laplace smoothing} (o add-one): facciamo finta di aver visto ogni parola una volta in più di quante l'abbiamo vista davvero, ovvero aggiungiamo 1 a tutti i conteggi. Dato che ognuna delle $|V|$ parole del vocabolario riceve un conteggio in più, anche il denominatore deve crescere di $|V|$, e la stima MLE dell'equazione~\eqref{eq:bigram-mle} diventa:
 \begin{equation}\label{eq:laplace}
-P_{\text{MLE}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i)}{C(w_{i-1})} \qquad \longrightarrow \qquad P_{\text{Add-1}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i) + 1}{C(w_{i-1}) + |V|}.
+P_{\text{Add-1}}(w_i \mid w_{i-1}) = \frac{C(w_{i-1} w_i) + 1}{C(w_{i-1}) + |V|}.
 \end{equation}
 Una generalizzazione è l'\textbf{add-$k$ smoothing}, in cui si aggiunge un conteggio frazionario $k$ (0.5? 0.01?) al posto di 1, e il denominatore diventa $C(w_{i-1}) + k|V|$. Il valore di $k$ va scelto, ad esempio, sul devset. La figura~\ref{fig:smoothing} mostra l'effetto sull'esempio di \textit{denied the}.
 
@@ -334,9 +334,9 @@ A volte conviene usare \textbf{meno contesto}, ovvero condizionare su un contest
 \end{itemize}
 In generale l'interpolazione funziona meglio. Nell'\textbf{interpolazione lineare} semplice la probabilità del trigramma è una media pesata delle tre stime:
 \begin{equation}
-\hat{P}(w_i \mid w_{i-2} w_{i-1}) = \lambda_1 P(w_i \mid w_{i-2} w_{i-1}) + \lambda_2 P(w_i \mid w_{i-1}) + \lambda_3 P(w_i), \qquad \sum_j \lambda_j = 1
+\hat{P}(w_i \mid w_{i-2} w_{i-1}) = \lambda_1 P(w_i \mid w_{i-2} w_{i-1}) + \lambda_2 P(w_i \mid w_{i-1}) + \lambda_3 P(w_i)
 \end{equation}
-dove il vincolo sulla somma dei $\lambda_j$ garantisce che il risultato sia ancora una probabilità. In una versione più sofisticata, i pesi dipendono dal contesto, $\lambda_j = \lambda_j(w_{i-2} w_{i-1})$: se abbiamo conteggi affidabili per un certo bigramma, possiamo fidarci di più dei trigrammi che lo estendono e dar loro un peso più alto.
+dove i pesi devono sommare a 1, $\sum_j \lambda_j = 1$, così che il risultato sia ancora una probabilità. In una versione più sofisticata, i pesi dipendono dal contesto, $\lambda_j = \lambda_j(w_{i-2} w_{i-1})$: se abbiamo conteggi affidabili per un certo bigramma, possiamo fidarci di più dei trigrammi che lo estendono e dar loro un peso più alto.
 
 \paragraph{Come scegliere i $\lambda$?} Si usa un \textbf{corpus held-out}, ovvero una parte dei dati tenuta da parte rispetto al training (e distinta dal test set). Si fissano le probabilità degli N-gram stimate sul training, e si cercano i $\lambda$ che danno la probabilità più alta al corpus held-out. Si può usare l'algoritmo Expectation-Maximization: si fissa $\lambda_1$ e si cerca $\lambda_2$, con $\lambda_3 = 1 - \lambda_1 - \lambda_2$, poi fissa $\lambda_2$ e cerca $\lambda_1$, e così via fino a convergenza.
 
@@ -405,7 +405,10 @@ Il primo fattore è il discount normalizzato, il secondo è il numero di tipi di
 
 La formulazione generale è ricorsiva:
 \begin{equation}
-P_{\text{KN}}(w_i \mid w_{i-k+1:i-1}) = \frac{\max(c_{\text{KN}}(w_{i-k+1:i}) - d, 0)}{c_{\text{KN}}(w_{i-k+1:i-1})} + \lambda(w_{i-k+1:i-1})\, P_{\text{KN}}(w_i \mid w_{i-k+2:i-1})
+\begin{aligned}
+P_{\text{KN}}(w_i \mid w_{i-k+1:i-1}) = {} & \frac{\max(c_{\text{KN}}(w_{i-k+1:i}) - d, 0)}{c_{\text{KN}}(w_{i-k+1:i-1})} \\
+& + \lambda(w_{i-k+1:i-1})\, P_{\text{KN}}(w_i \mid w_{i-k+2:i-1})
+\end{aligned}
 \end{equation}
 dove $c_{\text{KN}}(\cdot)$ è il conteggio normale per l'ordine più alto, e il \textbf{continuation count} per gli ordini più bassi, ovvero il numero di contesti distinti di una parola in cui compare la sequenza\footnote{La ricorsione termina interpolando gli unigrammi con la distribuzione uniforme $1/V$. La versione che funziona meglio è il \textit{modified Kneser-Ney} \cite{chen1998}, che usa tre discount diversi per gli N-gram con conteggio 1, 2 e 3 o più.}.
 
