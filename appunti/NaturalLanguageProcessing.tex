@@ -56,8 +56,18 @@
 % =====================================================
 \usepackage{listings}
 \usepackage[scaled=0.9]{beramono}
+% colori della sintassi, comuni a tutti i linguaggi (solo nel PDF: nella versione web il codice resta monocromatico)
+\lstdefinestyle{colori}{
+  keywordstyle=\color{Accent}\bfseries,
+  stringstyle=\color{ObsColor},
+  commentstyle=\color{LemmaColor},
+  numberstyle=\tiny\color{TextGray},
+}
 \lstdefinestyle{py}{
   language=Python,
+  style=colori,
+  % le stringhe tra tre apici (come il pattern di NLTK) contengono apici singoli: vanno chiuse solo da '''
+  morestring=[s]{'''}{'''},
   basicstyle=\ttfamily\small,
   numbers=left,
   numbersep=8pt,
@@ -70,6 +80,7 @@
 }
 \lstdefinestyle{sh}{
   language=bash,
+  style=colori,
   basicstyle=\ttfamily\small,
   frame=single,
   framerule=0.4pt,
